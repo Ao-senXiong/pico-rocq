@@ -5,6 +5,7 @@ Require Import Syntax Typing Subtyping ViewpointAdaptation Helpers.
 Require Import String.
 Require Import Coq.Sets.Ensembles.
 From RecordUpdate Require Import RecordUpdate.
+Require Import Coq.Logic.Classical_Prop.
 
 (* ------------------RUNTIME H ELPER FUNCTION------------------*)
 (* The first element should also be a Loc because that is the receiver type*)
@@ -191,7 +192,7 @@ Lemma not_in_both_env: forall CT sΓ rΓ h,
     | Some (Iot loc) => wf_r_typable CT rΓ h loc sqt
     | Some Null_a => True
     | None => False
-    end -> (forall x, static_lookup sΓ x = None -> getVal (vars rΓ) x = None).
+    end -> (forall x, x >= List.length sΓ -> static_lookup sΓ x = None -> getVal (vars rΓ) x = None).
 Proof.
 intros.
 unfold static_lookup in H1.
@@ -200,8 +201,13 @@ destruct (lt_dec x (List.length sΓ)).
     unfold getVal.
     rewrite nth_error_None.
     rewrite <- H.
-    
-Admitted.
+    lia.
+  - (* x >= dom sΓ *)
+    unfold getVal.
+    rewrite nth_error_None.
+    rewrite <- H.
+    lia.
+Qed.
 
 Global Hint Resolve not_in_both_env: rch.
 
