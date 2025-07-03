@@ -7,6 +7,21 @@ Require Import Coq.Logic.Classical_Prop.
 
 (* ------------------------------------------------------------- *)
 (* Soundness properties for PICO *)
+Theorem preservation_pico :
+  forall CT sΓ rΓ h stmt rΓ' h' sΓ',
+    wf_r_config CT sΓ rΓ h ->
+    stmt_typing CT sΓ stmt sΓ' -> 
+    eval_stmt rΓ h stmt rΓ' h' -> 
+    wf_r_config CT sΓ' rΓ' h'.
+Proof.
+  intros.
+  destruct H0.
+  - (* Case: stmt = Skip *)
+    inversion H1; subst.
+    exact H.
+  -  
+Admitted.
+
 Theorem progress_pico :
   forall CT sΓ rΓ h stmt sΓ',
     wf_r_config CT sΓ rΓ h ->
@@ -123,7 +138,15 @@ Proof.
         apply runtime_getVal_not_dom in Hgety.
         lia.
   - (* Case: stmt = fldwrite*)
-    admit.
+    destruct (runtime_getVal rΓ x) eqn:Hgetx.
+    + (* can find x in runtime env*)
+      destruct v.
+      * (* Case: v = Null_a *)
+        admit. (* Should get stuck because the type system does not prevent NPE*)
+      * (* Case: v = Iot loc *)
+        admit.
+    + (* can not find x in runtime env*)
+      admit.
   - (* Case: stmt = new *)
     admit.
   - (* Case: stmt = call *)
@@ -132,21 +155,6 @@ Proof.
     admit.
 Admitted.
 (* Qed. *)
-
-Theorem preservation_pico :
-  forall CT sΓ rΓ h stmt rΓ' h' sΓ',
-    wf_r_config CT sΓ rΓ h ->
-    stmt_typing CT sΓ stmt sΓ' -> 
-    eval_stmt rΓ h stmt rΓ' h' -> 
-    wf_r_config CT sΓ' rΓ' h'.
-Proof.
-  intros.
-  destruct H0.
-  - (* Case: stmt = Skip *)
-    inversion H1; subst.
-    exact H.
-  -  
-Admitted.
 
 (* ------------------------------------------------------------- *)
 (* Immutability properties for PICO *)
