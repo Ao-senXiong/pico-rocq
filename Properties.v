@@ -3,6 +3,7 @@ Require Import List.
 Import ListNotations.
 Require Import String.
 From RecordUpdate Require Import RecordUpdate.
+Require Import Coq.Logic.Classical_Prop.
 
 (* ------------------------------------------------------------- *)
 (* Soundness properties for PICO *)
@@ -20,6 +21,115 @@ Proof.
     exists (rΓ <| vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars) |>), h.
     apply SBS_Local.
     unfold wf_r_config in H.
+    unfold getVal.
+    rewrite nth_error_None.
+    replace (dom (vars rΓ)) with dom sΓ. 
+    unfold  static_getType in H2.
+    eapply nth_error_None in H2.
+    exact H2.
+    destruct H as [ _ [ _ [ _ [ _ [Hdom _]]]]].
+    exact Hdom.
+  - (* Case: stmt = VarAss *)
+    (* Evaluate e first *)
+    destruct e.
+    + (* Case: e = ENull *)
+      exists (rΓ <| vars := update x Null_a rΓ.(vars)|>), h. 
+      destruct H as [ _ [ _ [ _ [ _ [_ Hresult]]]]].
+      unfold static_getType in H2.
+      destruct (runtime_getVal rΓ x) eqn:Hgetval.
+      * 
+        eapply SBS_Assign; [ exact Hgetval | constructor ].
+      * 
+        exfalso.
+        assert (x < dom sΓ) by (apply nth_error_Some; eauto).
+        specialize (Hresult x H T' H2).
+        rewrite Hgetval in Hresult. exact Hresult.
+    + (* Case: e = EVar *)     
+      destruct H as [ _ [ _ [ _ [ _ [Henvmatch Hresult]]]]].
+      unfold static_getType in H2.
+      assert (Hx : x < dom sΓ) by (apply nth_error_Some; eauto).
+      specialize (Hresult x Hx T' H2).
+      destruct (runtime_getVal rΓ v) eqn:Hgetval.
+      * 
+        exists (rΓ <| vars := update x v0 rΓ.(vars) |>), h.
+        rename v into v1.
+        destruct (runtime_getVal rΓ x) eqn:Hgetx.
+        --
+          eapply SBS_Assign; [ exact Hgetx | constructor ].
+          exact Hgetval.
+        -- 
+          exfalso. exact Hresult.
+      * 
+        exfalso.
+        assert (Hv : nth_error sΓ v = Some T) by (inversion H1; auto).
+        unfold runtime_getVal in Hgetval.
+        assert (v < dom (vars rΓ)) by (rewrite <- Henvmatch; apply nth_error_Some; congruence).
+        apply nth_error_None in Hgetval.
+        lia.
+    + (* Case: e = EField *)
+      destruct H as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+      unfold static_getType in H2.
+      assert (Hx : x < dom sΓ) by (apply nth_error_Some; eauto).
+      specialize (Hresult x Hx T' H2).
+      inversion H1 as [| | ? ? ? ? ? ? Hobj Hfield ]; subst.
+      assert (Hv : nth_error sΓ v = Some T0) by (apply Hfield; auto).
+      assert (Hv' : v < dom sΓ) by (apply nth_error_Some; auto).
+      destruct (runtime_getVal rΓ v) eqn:Hgety.
+      *
+        destruct v1.
+        -- (* Case: v = Null_a *)
+          admit. (* Should get stuck because the type system does not prevent NPE*)
+        -- (* Case: v = Iot loc *)
+          destruct (runtime_getObj h l) eqn:Hgetval.
+          ++
+            destruct (getVal o.(fields_map) v0) eqn:Hgetfield.
+            ** (* Case: field exists *)
+              exists (rΓ <| vars := update x v1 rΓ.(vars) |>), h.
+              destruct (runtime_getVal rΓ x) eqn:Hgetx.
+              ---
+                eapply SBS_Assign.
+                +++
+                  exact Hgetx.
+                +++
+                  econstructor.
+                  ---- exact Hgety.
+                  ---- exact Hgetval.
+                  ---- exact Hgetfield.
+              ---
+                exfalso.    
+                auto.
+            ** (* Case: field does not exist *)
+              exfalso.
+              unfold wf_heap in Hheap.
+              assert (Hwf_o: wf_obj CT h l).
+              {
+                apply Hheap.
+                apply runtime_getObj_dom in Hgetval.
+                exact Hgetval.
+              }
+              unfold wf_obj in Hwf_o.
+              assert (Hwf_o' := Hwf_o).
+              rewrite Hgetval in Hwf_o'.
+              destruct Hwf_o' as [_ [_ Hdom_eq]].
+              apply getVal_not_dom in Hgetfield.
+              rewrite Hdom_eq in Hgetfield.
+              unfold sf_def in H.
+              unfold fields in H.
+              admit. (* subtyping polymorphism*)
+          ++ (* well formedness of runtime environment*)
+            admit.
+      *
+        exfalso.
+        apply runtime_getVal_not_dom in Hgety.
+        lia.
+  - (* Case: stmt = fldwrite*)
+    admit.
+  - (* Case: stmt = new *)
+    admit.
+  - (* Case: stmt = call *)
+    admit.
+  - (* Case: stmt = seq *)
+    admit.
 Admitted.
 (* Qed. *)
 
@@ -40,7 +150,7 @@ Admitted.
 
 (* ------------------------------------------------------------- *)
 (* Immutability properties for PICO *)
-Inductive reachability : heap -> Loc -> Loc -> Prop :=
+(* Inductive reachability : heap -> Loc -> Loc -> Prop :=
 
 (* we can access the current location *)
 | rch_heap:
@@ -64,11 +174,11 @@ Inductive reachability : heap -> Loc -> Loc -> Prop :=
       reachability h l0 l1 ->
       reachability h l1 l2 ->
       reachability h l0 l2.
-Global Hint Constructors reachability: rch.
+Global Hint Constructors reachability: rch. *)
 
 (* Field is in the abstract state if it is qualified by Immut/RDM and Final/RDA *)
 (* Reachability by the abstract state *)
-Inductive reach_by_abstract_state: class_table -> heap -> s_env -> r_env -> Loc -> Loc -> Prop :=
+(* Inductive reach_by_abstract_state: class_table -> heap -> s_env -> r_env -> Loc -> Loc -> Prop :=
 | rch_abs_heap:
     forall ct l h sΓ rΓ,
       l < dom h ->
@@ -90,7 +200,7 @@ Inductive reach_by_abstract_state: class_table -> heap -> s_env -> r_env -> Loc 
       reach_by_abstract_state ct h sΓ rΓ l0 l1 ->
       reach_by_abstract_state ct h sΓ rΓ l1 l2 ->
       reach_by_abstract_state ct h sΓ rΓ l0 l2.
-Global Hint Constructors reach_by_abstract_state: rch_abs.
+Global Hint Constructors reach_by_abstract_state: rch_abs. *)
 
 (* Inductive abstract_equality : class_table -> heap -> s_env -> r_env -> Loc -> Loc -> Prop :=
 | abs_eq_refl:

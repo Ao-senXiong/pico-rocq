@@ -169,14 +169,15 @@ Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop
   (* Variable typing *)
   | ET_Var : forall CT Γ x T,
       wf_senv CT Γ ->
-      static_lookup Γ x = Some T ->
+      static_getType Γ x = Some T ->
       expr_has_type CT Γ (EVar x) T
       
   (* Field access typing *)    
-  | ET_Field : forall CT Γ e T fT f,
+  | ET_Field : forall CT Γ x T fT f,
       wf_senv CT Γ ->
+      static_getType Γ x = Some T ->
       sf_def CT (sctype T) f = Some fT ->
-      expr_has_type CT Γ (EField e f) (Build_qualified_type (q_f_proj (mutability (ftype fT))) (f_base_type (ftype fT)))
+      expr_has_type CT Γ (EField x f) (Build_qualified_type (q_f_proj (mutability (ftype fT))) (f_base_type (ftype fT)))
 .
 
 Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
@@ -189,7 +190,7 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
   | ST_Local : forall CT sΓ T x sΓ',
       wf_senv CT sΓ ->
       wf_stypeuse CT (sqtype T) (sctype T) ->
-      static_lookup sΓ x = None ->
+      static_getType sΓ x = None ->
       sΓ' = (T :: sΓ) ->
       (* The local variable is added to the static environment *)
       stmt_typing CT sΓ (SLocal T x) sΓ'
@@ -198,15 +199,15 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
   | ST_VarAss : forall CT sΓ x e T T',
       wf_senv CT sΓ ->
       expr_has_type CT sΓ e T ->
-      static_lookup sΓ x = Some T' ->
+      static_getType sΓ x = Some T' ->
       qualified_type_subtype CT T T' ->
       stmt_typing CT sΓ (SVarAss x e) sΓ
 
   (* Field write *)
   | ST_FldWrite : forall CT sΓ x f y Tx Ty fieldT,
       wf_senv CT sΓ ->
-      static_lookup sΓ x = Some Tx ->
-      static_lookup sΓ y = Some Ty ->
+      static_getType sΓ x = Some Tx ->
+      static_getType sΓ y = Some Ty ->
       sf_def CT (sctype Tx) f = Some fieldT ->
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Tx) (Build_qualified_type (q_f_proj (mutability (ftype fieldT))) (f_base_type (ftype fieldT)))) ->
       vpa_assignability (sqtype Tx) (assignability (ftype fieldT)) = Assignable ->
@@ -215,8 +216,8 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
   (* Object creation *)
   | S_New : forall CT sΓ x Tx q C args argtypes n1 consig,
       wf_senv CT sΓ ->
-      static_lookup sΓ x = Some Tx ->
-      static_lookup_list sΓ args = Some argtypes ->
+      static_getType sΓ x = Some Tx ->
+      static_getType_list sΓ args = Some argtypes ->
       constructor_sig_lookup CT C = Some consig ->
       length consig.(sparams) = n1 ->
       Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj q) T)) (firstn n1 argtypes) consig.(sparams) ->
@@ -226,9 +227,9 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
   (* Method call *)
   | ST_Call : forall CT sΓ x m y args argtypes Tx Ty m_sig,
       wf_senv CT sΓ ->
-      static_lookup sΓ x = Some Tx ->
-      static_lookup sΓ y = Some Ty ->
-      static_lookup_list sΓ args = Some argtypes ->
+      static_getType sΓ x = Some Tx ->
+      static_getType sΓ y = Some Ty ->
+      static_getType_list sΓ args = Some argtypes ->
       method_sig_lookup CT (sctype Tx) m = Some m_sig ->
       qualified_type_subtype CT (vpa_qualified_type (sqtype Ty) (mret m_sig)) Tx -> (* assignment subtype checking*)
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreciever m_sig)) -> (* receiver subtype checking *) 

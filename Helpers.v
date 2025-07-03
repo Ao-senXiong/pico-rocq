@@ -3,15 +3,17 @@ Require Export List.
 Import ListNotations.
 Require Export Notations LibTactics Tactics.
 Require Export ssreflect ssrbool Coq.Sets.Finite_sets_facts.
+From RecordUpdate Require Import RecordUpdate.
+
 (* Implicit Type (σ: Store) (ρ ω: Env) (l: Loc) (L: LocSet) (Σ: StoreTyping) (T: Tpe) (μ: Mode) (Γ: EnvTyping). *)
 
 (* ------------------------------------------------------------------------ *)
 (** ** Helper functions *)
-Definition getObj (l : list Obj)    : Loc -> option Obj := nth_error l.
+Definition runtime_getObj (l : heap)    : Loc -> option Obj := nth_error l.
 Definition getVal (l : list value)  : Loc -> option value := nth_error l.
 (* Definition getAVal (l : list (r_a * value) )  : Loc -> option (r_a * value) := nth_error l. *)
-Definition getType (rΓ : r_env): Loc -> option value := nth_error (rΓ.(vars)).
-Definition static_lookup (sΓ: s_env): Loc -> option qualified_type := nth_error sΓ.
+Definition runtime_getVal (rΓ : r_env): Loc -> option value := nth_error (rΓ.(vars)).
+Definition static_getType (sΓ: s_env): Loc -> option qualified_type := nth_error sΓ.
 
 Fixpoint mapM {A B : Type} (f : A -> option B) (l : list A) : option (list B) :=
   match l with
@@ -23,15 +25,15 @@ Fixpoint mapM {A B : Type} (f : A -> option B) (l : list A) : option (list B) :=
       end
   end.
 
-Definition static_lookup_list (sΓ: s_env): list Loc -> option (list qualified_type) :=
-  fun l => mapM (fun x => static_lookup sΓ x) l.
+Definition static_getType_list (sΓ: s_env): list Loc -> option (list qualified_type) :=
+  fun l => mapM (fun x => static_getType sΓ x) l.
 
 Definition runtime_lookup_list (rΓ: r_env): list Loc -> option (list value) :=
-  fun l => mapM (fun x => getType rΓ x) l.
+  fun l => mapM (fun x => runtime_getVal rΓ x) l.
 
 (* ------------------------------------------------------------------------ *)
 (** ** Local hints *)
-Local Hint Unfold getObj getVal getType: updates.
+Local Hint Unfold runtime_getObj runtime_getVal static_getType: updates.
 (* ------------------------------------------------------------------------ *)
 (** * Updates **)
 
@@ -50,6 +52,12 @@ Fixpoint update {X : Type} (position : nat) (value : X) (l : list X) : list X :=
   end.
 Notation "[ x ↦  v ] l" := (update x v l) (at level 0).
 
+Fixpoint update_r_env_value (rΓ : r_env) (l : Loc) (v : value) : r_env :=
+  match rΓ with
+  {| vars := vars; |} => 
+      {| vars := update l v vars;|}
+  end.
+
 (** ** Updates lemmas *)
 Lemma update_same :
   forall X p v (l: list X),
@@ -61,20 +69,20 @@ Proof.
 Qed.
 Global Hint Resolve update_same: updates.
 
-Lemma getObj_update_same:
-  forall σ l O, l < dom σ -> getObj ([l ↦ O]σ) l = Some O.
+Lemma runtime_getObj_update_same:
+  forall h l O, l < dom h -> runtime_getObj ([l ↦ O]h) l = Some O.
 Proof.
   eauto using update_same.
 Qed.
 
-Lemma getVal_update_same:
-  forall ρ l v, l < dom ρ -> getVal ([l ↦ v]ρ) l = Some v.
+(* Lemma runtime_getVal_update_same:
+  forall ρ l v, l < dom ρ -> update_r_env_value ([l ↦ v]ρ) l = Some v.
 Proof.
   eauto using update_same.
-Qed.
+Qed. *)
 
-(* Lemma getType_update_same:
-  forall Σ l T, l < dom Σ -> getType ([l ↦ T]Σ) l = Some T.
+Lemma static_getType_update_same:
+  forall sΓ l T, l < dom sΓ -> static_getType ([l ↦ T]sΓ) l = Some T.
 Proof.
   eauto using update_same.
 Qed.
@@ -89,26 +97,26 @@ Proof.
 Qed.
 Global Hint Resolve update_diff: updates.
 
-Lemma getObj_update_diff:
-  forall σ l l' O,
+Lemma runtime_getObj_update_diff:
+  forall h l l' O,
     l <> l' ->
-    getObj ([l ↦ O]σ) l' = getObj σ l'.
+    runtime_getObj ([l ↦ O]h) l' = runtime_getObj h l'.
 Proof.
   eauto using update_diff.
 Qed.
 
-Lemma getVal_update_diff:
+(* Lemma runtime_getVal_update_diff:
   forall ρ l l' v,
     l <> l' ->
-    getVal ([l ↦ v]ρ) l' = getVal ρ l'.
+    runtime_getVal ([l ↦ v]ρ) l' = runtime_getVal ρ l'.
 Proof.
   eauto using update_diff.
-Qed.
+Qed. *)
 
-Lemma getType_update_diff:
-  forall Σ l l' T,
+Lemma static_getType_update_diff:
+  forall sΓ l l' T,
     l <> l' ->
-    getType ([l ↦ T]Σ) l' = getType Σ l'.
+    static_getType ([l ↦ T]sΓ) l' = static_getType sΓ l'.
 Proof.
   eauto using update_diff.
 Qed.
@@ -122,13 +130,13 @@ Proof.
 Qed.
 Global Hint Resolve update_length: updates.
 
-Lemma getObj_dom:
-  forall l O σ, getObj σ l = Some O -> l < dom σ.
+Lemma runtime_getObj_dom:
+  forall l O h, runtime_getObj h l = Some O -> l < dom h.
 Proof.
-  unfold getObj.
+  unfold runtime_getObj.
   intros; eapply nth_error_Some; eauto.
 Qed.
-Global Hint Resolve getObj_dom: updates.
+Global Hint Resolve runtime_getObj_dom: updates.
 
 Lemma getVal_dom:
   forall l v ρ, getVal ρ l = Some v -> l < dom ρ.
@@ -138,43 +146,74 @@ Proof.
 Qed.
 Global Hint Resolve getVal_dom: updates.
 
-Lemma getType_dom:
-  forall l O Σ, getType Σ l = Some O -> l < dom Σ.
+Lemma getVal_not_dom:
+  forall l ρ, getVal ρ l = None -> l >= dom ρ.
 Proof.
-  unfold getType.
+  unfold getVal.
+  intros; eapply nth_error_None; eauto.
+Qed.
+Global Hint Resolve getVal_not_dom: updates.
+
+Lemma runtime_getVal_dom:
+  forall l v ρ, runtime_getVal ρ l = Some v -> l < dom ρ.(vars).
+Proof.
+  unfold runtime_getVal.
   intros; eapply nth_error_Some; eauto.
 Qed.
-Global Hint Resolve getType_dom: updates.
+Global Hint Resolve runtime_getVal_dom: updates.
 
+Lemma runtime_getVal_not_dom:
+  forall l ρ, runtime_getVal ρ l = None -> l >= dom ρ.(vars).
+Proof.
+  unfold runtime_getVal.
+  intros; eapply nth_error_None; eauto.
+Qed.
+Global Hint Resolve runtime_getVal_not_dom: updates.
+
+Lemma static_getType_dom:
+  forall l O sΓ, static_getType sΓ l = Some O -> l < dom sΓ.
+Proof.
+  unfold static_getType.
+  intros; eapply nth_error_Some; eauto.
+Qed.
+Global Hint Resolve static_getType_dom: updates.
+
+Lemma static_getType_not_dom:
+  forall l sΓ, static_getType sΓ l = None -> l >= dom sΓ.
+Proof.
+  unfold static_getType.
+  intros; eapply nth_error_None; eauto.
+Qed.
+Global Hint Resolve static_getType_not_dom: updates.
 
 (* ------------------------------------------------------------------------ *)
 (** ** Domains lemmas *)
 
-Lemma getObj_Some : forall σ l,
+Lemma runtime_getObj_Some : forall σ l,
     l < dom σ ->
-    exists C ω, getObj σ l = Some (C, ω).
+    exists C ω, runtime_getObj σ l = Some (mkObj C ω).
 Proof.
   intros.
-  destruct (getObj σ l) as [[C ω]|] eqn:?.
+  destruct (runtime_getObj σ l) as [[C ω]|] eqn:?.
   exists C, ω; auto.
   exfalso. eapply nth_error_None in Heqo. lia.
 Qed.
 
-Lemma getVal_Some : forall ρ f,
+(* Lemma getVal_Some : forall ρ f,
     f < dom ρ ->
     exists v, getVal ρ f = Some v.
 Proof.
   intros.
   destruct (getVal ρ f) as [|] eqn:?; eauto.
   exfalso. eapply nth_error_None in Heqo. lia.
-Qed.
+Qed. *)
 
-Lemma getType_Some : forall Σ l,
-    l < dom Σ ->
-    exists T, getType Σ l = Some T.
+Lemma static_getType_Some : forall sΓ l,
+    l < dom sΓ ->
+    exists T, static_getType sΓ l = Some T.
 Proof.
   intros.
-  destruct (getType Σ l) as [|] eqn:?; eauto.
+  destruct (static_getType sΓ l) as [|] eqn:?; eauto.
   exfalso. eapply nth_error_None in Heqo. lia.
 Qed.
 
@@ -184,35 +223,34 @@ Qed.
 
 (* This function tries to add the new field of index x to an existing object, and does nothing if
 the object already exists with not the right number of fields *)
-Definition assign_new l x v σ : option Store :=
-  match (getObj σ l) with
-  | Some (C, ω) => if (x =? length ω) then
-                    Some [l ↦ (C, ω++[v])]σ
+Definition assign_new l x v h : option heap :=
+  match (runtime_getObj h l) with
+  | Some (mkObj C ω) => if (x =? length ω) then
+                    Some [ l ↦ (mkObj C (ω++[v])) ]h
                   else
-                    Some [l ↦ (C, [x ↦ v]ω)]σ
+                    Some [ l ↦ (mkObj C [x ↦ v]ω) ]h
   | None => None (* Error : adding a field to non-existing object *)
 end.
 
 Lemma assign_new_dom:
-  forall σ l x v σ',
-    assign_new l x v σ = Some σ' ->
-    dom σ = dom σ'.
+  forall h l x v h',
+    assign_new l x v h = Some h' ->
+    dom h = dom h'.
 Proof.
   unfold assign_new; steps; try rewrite update_length; done.
 Qed.
 
-(* Update store with update in local env : update an already-existing field of an existing object *)
-Definition assign l x v σ : Store :=
-  match (getObj σ l) with
-  | Some (C, ω) => [ l ↦ (C, [x ↦ v]ω)] σ
-  | None => σ (* ? *)
+(* Update heap with update in local env : update an already-existing field of an existing object *)
+Definition assign l x v h : heap :=
+  match (runtime_getObj h l) with
+  | Some (mkObj C ω) => [ l ↦ (mkObj C [x ↦ v]ω)] h
+  | None => h (* ? *)
   end.
-
 
 (* ------------------------------------------------------------------------ *)
 (** ** Class info *)
 
-Definition fieldType C f :=
+(* Definition fieldType C f :=
   match ct C with
   | class _ flds _  =>
       match nth_error flds f with
@@ -228,24 +266,24 @@ Definition methodInfo C m :=
       | None => None
       | Some (method μ Ts retT e) => Some (μ, Ts, retT, e)
       end
-  end.
+  end. *)
 
 
 (* ------------------------------------------------------------------------ *)
 (** ** Additions of new objects *)
 
-Lemma getObj_last :
+Lemma runtime_getObj_last :
   forall σ C ρ,
-    getObj (σ++[(C,ρ)]) (dom σ) = Some (C, ρ).
+    runtime_getObj (σ++[mkObj C ρ]) (dom σ) = Some (mkObj C ρ).
 Proof.
   induction σ; steps.
 Qed.
-Global Hint Resolve getObj_last: core.
+Global Hint Resolve runtime_getObj_last: core.
 
-Lemma getObj_last2 :
+Lemma runtime_getObj_last2 :
   forall σ C ρ l,
     l < (dom σ) ->
-    getObj (σ++[(C,ρ)]) l = getObj σ l.
+    runtime_getObj (σ++[ mkObj C ρ ]) l = runtime_getObj σ l.
 Proof.
   induction σ; simpl; intros; try lia.
   destruct l;
@@ -253,18 +291,18 @@ Proof.
     eauto with lia.
 Qed.
 
-Lemma getType_last :
+Lemma static_getType_last :
   forall Σ T,
-    getType (Σ++[T]) (dom Σ) = Some T.
+    static_getType (Σ++[T]) (dom Σ) = Some T.
 Proof.
   induction Σ; steps.
 Qed.
-Global Hint Resolve getType_last: core.
+Global Hint Resolve static_getType_last: core.
 
-Lemma getType_last2 :
+Lemma static_getType_last2 :
   forall Σ T l,
     l < (dom Σ) ->
-    getType (Σ++[T]) l = getType Σ l.
+    static_getType (Σ++[T]) l = static_getType Σ l.
 Proof.
   induction Σ; simpl; intros; try lia.
   destruct l;
@@ -272,11 +310,11 @@ Proof.
     eauto with lia.
 Qed.
 
-Lemma getObj_last_empty :
+(* Lemma runtime_getObj_last_empty :
   forall σ C C' ω l f v,
-    getObj (σ++[(C,[])]) l = Some (C', ω) ->
+    runtime_getObj (σ++[(C,[])]) l = Some (C', ω) ->
     getVal ω f = Some v ->
-    getObj σ l = Some (C', ω) /\ l < dom σ.
+    runtime_getObj σ l = Some (C', ω) /\ l < dom σ.
 Proof.
   intros.
   assert (l < dom (σ ++ [(C,[])])).
@@ -295,9 +333,9 @@ Proof.
     rewrite getObj_last in H.
     invert_constructor_equalities; steps;
       destruct f; steps.
-Qed.
+Qed. *)
 
-Lemma getVal_add:
+(* Lemma getVal_add:
   forall ω l l' f,
     getVal (ω ++ [l]) f = Some l' ->
     (f = length ω /\ l = l') \/ (f < length ω /\ getVal ω f = Some l').
@@ -314,9 +352,9 @@ Proof.
     | rewrite_anywhere nth_error_app2 ] ;
     steps;
     rewrite_anywhere PeanoNat.Nat.sub_diag; steps.
-Qed.
+Qed. *)
 
-Lemma getVal_last :
+(* Lemma getVal_last :
   forall ω v,
     getVal (ω++[v]) (dom ω) = Some v.
 Proof.
@@ -332,12 +370,12 @@ Proof.
   induction ω; simpl; intros; try lia.
   destruct x; steps;
     eauto with lia.
-Qed.
+Qed. *)
 
 (* ------------------------------------------------------------------------ *)
 (** ** Tactics *)
 
-Ltac ct_lookup C :=
+(* Ltac ct_lookup C :=
   destruct (ct C) as [?Args ?Flds ?Mtds] eqn:?H__ct.
 
 Ltac updates :=
@@ -394,13 +432,13 @@ Ltac updates :=
     | |- context [getObj (?σ ++ _) (dom ?σ) ] => rewrite getObj_last
 
     end.
-Global Hint Extern 1 => updates: updates.
+Global Hint Extern 1 => updates: updates. *)
 
 
 (* ------------------------------------------------------------------------ *)
 (** ** Maps *)
 
-Lemma dom_map:
+(* Lemma dom_map:
   forall Σ (f: Tpe -> Tpe),
     dom (map (fun T => f T) Σ) = dom Σ.
 Proof.
@@ -416,27 +454,27 @@ Lemma getType_map:
 Proof.
   unfold getType. intros.
   rewrite nth_error_map H. steps.
-Qed.
+Qed. *)
 
 (* ------------------------------------------------------------------------ *)
 (** ** List Loc *)
 
-Ltac inSingleton :=
+(* Ltac inSingleton :=
   match goal with
   | H: ?a ∈ Singleton Loc ?b |- _ => induction H
   | H: {?x} ?y |- _ => induction H
-  end.
+  end. *)
 
 
 (* ------------------------------------------------------------------------ *)
 (** ** Store Subset *)
 
 (** A set of locations is contained in a store: [L ⪽ σ] *)
-Definition storeSubset σ L :=
-  forall l, l ∈ L -> l < dom σ.
+(* Definition storeSubset σ L :=
+  forall l, l ∈ L -> l < dom σ. *)
 
 (** The codomain of an environment is the set of locations it contains *)
-Definition codom ρ : LocSet :=
+(* Definition codom ρ : LocSet :=
   fun l => (List.In l ρ).
 
 Notation "L ⪽ σ" := (storeSubset σ L) (at level 80).
@@ -571,13 +609,13 @@ Ltac ss :=
          | H: ?a ∪ {?l} ⪽ ?σ |- ?l < dom ?σ => apply ss_singleton_inv, ss_union_r with a, H
          | H: {?l} ∪ ?b ⪽ ?σ |- ?l < dom ?σ => apply ss_singleton_inv, ss_union_l with b, H
          end || ss_union.
-Global Hint Extern 1 => ss : core.
+Global Hint Extern 1 => ss : core. *)
 
 
 (* ------------------------------------------------------------------------ *)
 (** ** Finite sets results **)
 
-Lemma storeSubset_finite: forall σ L,
+(* Lemma storeSubset_finite: forall σ L,
     L ⪽ σ ->
     Finite Loc L.
 Proof.
