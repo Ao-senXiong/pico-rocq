@@ -146,11 +146,31 @@ Proof.
       * (* Case: v = Iot loc *)
         admit.
     + (* can not find x in runtime env*)
-      admit.
+      exfalso.
+      apply runtime_getVal_not_dom in Hgetx.
+      apply static_getType_dom in H1.
+      destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+      lia.
   - (* Case: stmt = new *)
-    admit.
+    destruct (runtime_getVal rΓ x) eqn:Hgetx.
+    + (* can find x in runtime env*)
+      admit.
+    + (* can not find x in runtime env*)
+      exfalso.
+      apply runtime_getVal_not_dom in Hgetx.
+      apply static_getType_dom in H1.
+      destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+      lia.
   - (* Case: stmt = call *)
-    admit.
+    destruct (runtime_getVal rΓ x) eqn:Hgetx.
+    + (* can find x in runtime env*)
+      admit.
+    + (* can not find x in runtime env*)
+      exfalso.
+      apply runtime_getVal_not_dom in Hgetx.
+      apply static_getType_dom in H1.
+      destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+      lia.
   - (* Case: stmt = seq *)
     admit.
 Admitted.
