@@ -28,8 +28,15 @@ Theorem progress_pico :
     stmt_typing CT sΓ stmt sΓ' ->
     exists rΓ' h', eval_stmt rΓ h stmt rΓ' h'.
 Proof.
-  intros.
-  destruct H0.
+  intros. 
+  generalize dependent h. generalize dependent rΓ.
+  (* do induction, while give names to each introduced item. *)
+  induction H0 as [H0 | CT sΓ T x sΓ' H0 H1 H2 H3 
+  | CT sΓ x e T T' H0 H1 H2 H3 
+  | CT sΓ x f y Tx Ty fieldT H0 H1 H2 H3 H4 H5
+  | CT sΓ x Tx q C args argtypes n1 consig H0 H1 H2 H3 H4 H5 H6 
+  | CT sΓ x m y args argtypes Tx Ty m_sig  H0 H1 H2 H3 H4 H5 H6 H7  
+  | CT sΓ s1 sΓ' s2 sΓ'' H0_ IHstmt_typing1 H0_0 IHstmt_typing2 ]; intros.
   - (* Case: stmt = Skip *)
     exists rΓ, h. apply SBS_Skip.
   - (* Case: stmt = Local *)
@@ -39,7 +46,7 @@ Proof.
     unfold getVal.
     rewrite nth_error_None.
     replace (dom (vars rΓ)) with dom sΓ. 
-    unfold  static_getType in H2.
+    unfold static_getType in H2.
     eapply nth_error_None in H2.
     exact H2.
     destruct H as [ _ [ _ [ _ [ _ [Hdom _]]]]].
@@ -172,7 +179,10 @@ Proof.
       destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
       lia.
   - (* Case: stmt = seq *)
-    admit.
+    intros. specialize (IHstmt_typing1 rΓ h).  apply IHstmt_typing1 in H as Ind1.
+    destruct Ind1 as [rΓ' [h' Ind1]]. specialize (preservation_pico CT sΓ rΓ h s1 rΓ' h' sΓ' H H0_ Ind1) as pre1.
+    specialize (IHstmt_typing2 rΓ' h'). apply IHstmt_typing2 in pre1 as Ind2. destruct Ind2 as [rΓ'' [h'' Ind2]].
+    exists rΓ'', h''. econstructor; eauto.
 Admitted.
 (* Qed. *)
 
