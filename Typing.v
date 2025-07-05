@@ -31,22 +31,19 @@ Definition parent (CT : class_table) (C : class_name) : option class_name :=
   end.
 
 (* Collect fields of a class and its superclasses, with fuel to prevent infinite loops *)
-Fixpoint collect_fields_fuel (fuel : nat) (CT : class_table) (C : class_name) : (list field_def) :=
+Fixpoint collect_fields_fuel (fuel : nat) (CT : class_table) (C : class_name) : list field_def :=
   match fuel with
   | O => []
   | S fuel' =>
     match find_class CT C with
     | None => []
     | Some def =>
-      match super (signature def) with
-      | Some (Class_name n) =>
-        match collect_fields_fuel fuel' CT (Class_name n) with
-        | [] => []
-        | fs => fs ++ fields (body def)
-        end
-      | None =>
-          fields (body def)
-      end
+      let super_fields :=
+        match super (signature def) with
+        | Some (Class_name n) => collect_fields_fuel fuel' CT (Class_name n)
+        | None => []
+        end in
+      super_fields ++ fields (body def)
     end
   end.
 
