@@ -11,7 +11,7 @@ Theorem preservation_pico :
   forall CT sΓ rΓ h stmt rΓ' h' sΓ',
     wf_r_config CT sΓ rΓ h ->
     stmt_typing CT sΓ stmt sΓ' -> 
-    eval_stmt rΓ h stmt rΓ' h' -> 
+    eval_stmt OK rΓ h stmt OK rΓ' h' -> 
     wf_r_config CT sΓ' rΓ' h'.
 Proof.
   intros.
@@ -26,7 +26,7 @@ Theorem progress_pico :
   forall CT sΓ rΓ h stmt sΓ',
     wf_r_config CT sΓ rΓ h ->
     stmt_typing CT sΓ stmt sΓ' ->
-    exists rΓ' h', eval_stmt rΓ h stmt rΓ' h'.
+    exists rΓ' h', eval_stmt OK rΓ h stmt OK rΓ' h' \/ eval_stmt OK rΓ h stmt NPE rΓ' h'.
 Proof.
   intros. 
   generalize dependent h. generalize dependent rΓ.
@@ -38,9 +38,12 @@ Proof.
   | CT sΓ x m y args argtypes Tx Ty m_sig  H0 H1 H2 H3 H4 H5 H6 H7  
   | CT sΓ s1 sΓ' s2 sΓ'' H0_ IHstmt_typing1 H0_0 IHstmt_typing2 ]; intros.
   - (* Case: stmt = Skip *)
-    exists rΓ, h. apply SBS_Skip.
+    exists rΓ, h.
+    left.
+    apply SBS_Skip.
   - (* Case: stmt = Local *)
     exists (rΓ <| vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars) |>), h.
+    left.
     apply SBS_Local.
     unfold wf_r_config in H.
     unfold getVal.
@@ -60,7 +63,7 @@ Proof.
       unfold static_getType in H2.
       destruct (runtime_getVal rΓ x) eqn:Hgetval.
       * 
-        eapply SBS_Assign; [ exact Hgetval | constructor ].
+        left. eapply SBS_Assign; [ exact Hgetval | constructor ].
       * 
         exfalso.
         assert (x < dom sΓ) by (apply nth_error_Some; eauto).
@@ -77,7 +80,7 @@ Proof.
         rename v into v1.
         destruct (runtime_getVal rΓ x) eqn:Hgetx.
         --
-          eapply SBS_Assign; [ exact Hgetx | constructor ].
+          left. eapply SBS_Assign; [ exact Hgetx | constructor ].
           exact Hgetval.
         -- 
           exfalso. exact Hresult.
@@ -100,7 +103,16 @@ Proof.
       *
         destruct v1.
         -- (* Case: v = Null_a *)
-          admit. (* Should get stuck because the type system does not prevent NPE*)
+          exists rΓ, h.
+          right.
+          destruct (runtime_getVal rΓ x) eqn:Hgetx.
+          ++
+            apply SBS_Assign_NPE with v1 Null_a; 
+            [ exact Hgetx | apply EBS_Field_NPE; exact Hgety ].
+          ++
+            exfalso.
+            apply runtime_getVal_not_dom in Hgetx.
+            lia.
         -- (* Case: v = Iot loc *)
           destruct (runtime_getObj h l) eqn:Hgetval.
           ++ (* can find object by address l *)
@@ -109,6 +121,7 @@ Proof.
               exists (rΓ <| vars := update x v1 rΓ.(vars) |>), h.
               destruct (runtime_getVal rΓ x) eqn:Hgetx.
               ---
+                left.
                 eapply SBS_Assign.
                 +++
                   exact Hgetx.
@@ -154,7 +167,10 @@ Proof.
     + (* can find x in runtime env*)
       destruct v.
       * (* Case: v = Null_a *)
-        admit. (* Should get stuck because the type system does not prevent NPE*)
+        exists rΓ, h.
+        right.
+        apply SBS_FldWrite_NPE.
+        exact Hgetx.
       * (* Case: v = Iot loc *)
         admit.
     + (* can not find x in runtime env*)
@@ -176,7 +192,22 @@ Proof.
   - (* Case: stmt = call *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
     + (* can find x in runtime env*)
-      admit.
+      destruct (runtime_getVal rΓ y) eqn:Hgety.
+      * (* can find y in runtime env *)
+        destruct v0.
+        -- (* Case: v0 = Null_a *)
+          exists rΓ, h.
+          right.
+          apply SBS_Call_NPE.
+          exact Hgety.
+        -- (* Case: v0 = Iot loc *)
+          admit.
+      * (* can not find y in runtime env *)
+        exfalso.
+        apply runtime_getVal_not_dom in Hgety.
+        apply static_getType_dom in H2.
+        destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+        lia.
     + (* can not find x in runtime env*)
       exfalso.
       apply runtime_getVal_not_dom in Hgetx.
@@ -185,10 +216,19 @@ Proof.
       lia.
   - (* Case: stmt = seq *)
     intros. specialize (IHstmt_typing1 rΓ h).  apply IHstmt_typing1 in H as Ind1.
-    destruct Ind1 as [rΓ' [h' Ind1]]. specialize (preservation_pico CT sΓ rΓ h s1 rΓ' h' sΓ' H H0_ Ind1) as pre1.
-    specialize (IHstmt_typing2 rΓ' h'). apply IHstmt_typing2 in pre1 as Ind2. destruct Ind2 as [rΓ'' [h'' Ind2]].
-    exists rΓ'', h''. econstructor; eauto.
-Admitted. 
+    destruct Ind1 as [rΓ' [h' Ind1]].
+    destruct Ind1 as [Hok | Hnpe].
+    +
+      specialize (preservation_pico CT sΓ rΓ h s1 rΓ' h' sΓ' H H0_) as pre1.
+      specialize (IHstmt_typing2 rΓ' h'). apply IHstmt_typing2 in pre1 as Ind2; [| exact Hok].
+      destruct Ind2 as [rΓ'' [h'' [Hok2 | Hnpe2]]].
+      * 
+        exists rΓ'' h''. left. econstructor; eauto.
+      * 
+        exists rΓ'' h''. right. apply SBS_Seq_NPE_second with rΓ' h'; [exact Hok | exact Hnpe2].
+    +
+      exists rΓ' h'. right. apply SBS_Seq_NPE_first; assumption.
+Admitted.
 (* Qed. *)
 
 (* ------------------------------------------------------------- *)

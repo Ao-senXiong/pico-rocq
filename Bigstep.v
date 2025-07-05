@@ -184,6 +184,68 @@ Definition wf_r_typable (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (sqt:
   | _, _ => False
   end.
 
+(* Lemma collect_fields_fuel_step :
+  forall fuel CT C decl,
+    find_class CT C = Some decl ->
+    forall superC,
+      super (signature decl) = Some (superC) ->
+      collect_fields_fuel (S fuel) CT C =
+      collect_fields_fuel fuel CT superC ++ fields (body decl).
+Proof.
+  intros fuel CT C decl Hfind superC Hsuper.
+  simpl.
+  rewrite Hfind.
+  rewrite Hsuper.
+  destruct superC as [n].
+  simpl.
+  reflexivity.
+Qed.  
+
+Lemma collect_fields_monotone :
+  forall CT Csub Csup,
+    base_subtype CT Csub Csup ->
+    dom (collect_fields_fuel dom CT CT Csup) <=
+    dom (collect_fields_fuel dom CT CT Csub).
+Proof.
+  intros CT Csub Csup Hsub.
+  induction Hsub.
+  - 
+    reflexivity.
+  -
+    exact (Nat.le_trans _ _ _ IHHsub2 IHHsub1).
+  -
+    rename decl into def.
+    unfold collect_fields_fuel at 2.
+    rewrite H.
+    rewrite H1.
+    apply Nat.le_add_r.
+Qed.
+
+
+Lemma qualified_type_subtype_fields :
+forall CT T1 T2,
+  qualified_type_subtype CT T1 T2 ->
+  dom (collect_fields CT (sctype T1)) <= dom (collect_fields CT (sctype T2)).
+Proof.
+intros CT T1 T2 Hsub.
+induction Hsub; simpl.
+remember (sctype qt1) as Csub.
+remember (sctype qt2) as Csup.
+-
+  unfold collect_fields.
+  unfold collect_fields_fuel.
+  auto.
+
+(* Runtime object typable has more fields compared to its static type *)
+Lemma r_obj_more_fields_than_sqt :
+  forall CT rΓ h ι sqt rqt,
+    wf_r_typable CT rΓ h ι sqt ->
+    r_basetype h ι = Some rqt ->
+    List.length (collect_fields CT rqt) >= List.length (collect_fields CT (sqt.(sctype))).
+Proof.
+intros.
+unfold wf_r_typable in H.   *)
+
 (* Wellformed Runtime Config: if (1) heap is well formed (2) static env is well formed (3) runtime env is well formed (4) the static env and run time env corresponds  *)
 Definition wf_r_config (CT: class_table) (sΓ: s_env) (rΓ: r_env) (h: heap)  : Prop :=
   (* class_def in CT are wellformed  *)
@@ -240,36 +302,47 @@ Global Hint Resolve not_in_both_env: rch.
 (* ------------------EVALUATION RULES------------------*)
 (* Reserved Notation "'(' rΓ ',' h ')' '⟦'  s  '⟧'   '-->'  '(' rΓ',' h' ')'" (at level 80). *)
 
+(* Evaluation resulting state *)
+
+Inductive eval_result :=
+| OK : eval_result
+| NPE : eval_result.
+
 (* PICO expression evaluation *)
-Inductive eval_expr : r_env -> heap -> expr -> value -> r_env -> heap -> Prop :=
+Inductive eval_expr : eval_result -> r_env -> heap -> expr -> value -> eval_result -> r_env -> heap -> Prop :=
   (* evalutate null expression  *)
   | EBS_Null : forall rΓ h,
-      eval_expr rΓ h ENull Null_a rΓ h
+      eval_expr OK rΓ h ENull Null_a OK rΓ h
 
   (* evaluate value expression *)
   | EBS_Val : forall rΓ h x v,
       runtime_getVal rΓ x = Some v ->
-      eval_expr rΓ h (EVar x) v rΓ h
+      eval_expr OK rΓ h (EVar x) v OK rΓ h
 
   (* evaluate field access expression *)  
   | EBS_Field : forall rΓ h x f v o v1,
       runtime_getVal rΓ x = Some (Iot v) ->
       runtime_getObj h v = Some o ->
       getVal o.(fields_map) f = Some v1 ->
-      eval_expr rΓ h (EField x f) v1 rΓ h
+      eval_expr OK rΓ h (EField x f) v1 OK rΓ h
+
+  (* evaluate field access expression yields NPE *)
+  | EBS_Field_NPE : forall rΓ h x f v,
+      runtime_getVal rΓ x = Some (Null_a) ->
+      eval_expr OK rΓ h (EField x f) v NPE rΓ h
   .
 Notation "'(' rΓ ',' h ')' '⟦'  e  '⟧'   '-->'  '(' v ',' rΓ' ',' h' ')'" := (eval_expr rΓ h e v rΓ' h') (at level 80).
 
 (* PICO Statement evaluation *)
-Inductive eval_stmt : r_env -> heap -> stmt -> r_env -> heap -> Prop :=
+Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_env -> heap -> Prop :=
   (* evaluate skip statement *)
   | SBS_Skip : forall rΓ h,
-      eval_stmt rΓ h SSkip rΓ h
+      eval_stmt OK rΓ h SSkip OK rΓ h
 
   (* evaluate local variable declaration statement *)
   | SBS_Local : forall rΓ h T x,
       runtime_getVal rΓ x = None ->
-      eval_stmt rΓ h (SLocal T x)
+      eval_stmt OK rΓ h (SLocal T x) OK
       (* (rΓ <|vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
       (rΓ <|vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars)|> )
       h
@@ -277,11 +350,20 @@ Inductive eval_stmt : r_env -> heap -> stmt -> r_env -> heap -> Prop :=
   (* evaluate variable assignment statement *)
   | SBS_Assign : forall rΓ h x e v1 v2,
       runtime_getVal rΓ x = Some v1 ->
-      eval_expr rΓ h e v2 rΓ h ->
-      eval_stmt rΓ h (SVarAss x e)
+      eval_expr OK rΓ h e v2 OK rΓ h ->
+      eval_stmt OK rΓ h (SVarAss x e) OK
       (* (rΓ <|vars := update x v2 rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
       (rΓ <|vars := update x v2 rΓ.(vars)|>)
       h
+
+  | SBS_Assign_NPE : forall rΓ h x e v1 v2 rΓ' h',
+    runtime_getVal rΓ x = Some v1 ->
+    eval_expr OK rΓ h e v2 NPE rΓ h ->
+    eval_stmt OK rΓ h (SVarAss x e) NPE
+    (* (rΓ <|vars := update x v2 rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
+    (* (rΓ <|vars := update x v2 rΓ.(vars)|>) *)
+    rΓ'
+    h'   
 
   (* evaluate field write statement *)
   | SBS_FldWrite: forall CT rΓ h x f y lx o vf v2 h',
@@ -291,7 +373,12 @@ Inductive eval_stmt : r_env -> heap -> stmt -> r_env -> heap -> Prop :=
       runtime_getVal rΓ y = Some v2 ->
       can_assign CT rΓ h lx f = true ->
       h' = update_field h lx f v2 ->
-      eval_stmt rΓ h (SFldWrite x f y) rΓ h'
+      eval_stmt OK rΓ h (SFldWrite x f y) OK rΓ h'
+
+  (* evaluate field write statement NPE *)
+  | SBS_FldWrite_NPE: forall rΓ h x f y rΓ' h',
+      runtime_getVal rΓ x = Some (Null_a) ->
+      eval_stmt OK rΓ h (SFldWrite x f y) NPE rΓ' h'
 
   (* evaluate object creation statement *)
   | SBS_New: forall rΓ h x q_c c ys vals l1 qthisr qthis qadapted o rΓ' h',
@@ -303,7 +390,7 @@ Inductive eval_stmt : r_env -> heap -> stmt -> r_env -> heap -> Prop :=
       o = mkObj (mkruntime_type qadapted c) (vals) ->
       h' = update (List.length h + 1) o h ->
       rΓ' = rΓ <| vars := update x (Iot (List.length h')) rΓ.(vars) |> ->
-      eval_stmt rΓ h (SNew x q_c c ys) rΓ' h'
+      eval_stmt OK rΓ h (SNew x q_c c ys) OK rΓ' h'
 
   (* evaluate method call statement *)
   | SBS_Call: forall CT rΓ h x y m zs vals ly cy mbody mstmt mret retval h' rΓ' rΓ'' rΓ''',
@@ -315,16 +402,30 @@ Inductive eval_stmt : r_env -> heap -> stmt -> r_env -> heap -> Prop :=
     runtime_lookup_list rΓ zs = Some vals ->
     (* rΓ' = mkr_env (Iot ly :: vals) rΓ.(init_state) -> *)
     rΓ' = mkr_env (Iot ly :: vals) ->
-    eval_stmt rΓ' h mstmt rΓ'' h' ->
+    eval_stmt OK rΓ' h mstmt OK rΓ'' h' ->
     runtime_getVal rΓ'' mret = Some retval ->
     rΓ''' = rΓ <| vars := update x retval rΓ.(vars) |> ->
-    eval_stmt rΓ h (SCall x m y zs) rΓ''' h'
+    eval_stmt OK rΓ h (SCall x m y zs) OK rΓ''' h'
+
+  (* evaluate method call statement NPE *)
+  | SBS_Call_NPE: forall rΓ h x y m zs rΓ' h',
+      runtime_getVal rΓ y = Some (Null_a) ->
+      eval_stmt OK rΓ h (SCall x m y zs) NPE rΓ' h'
 
   (* evaluate sequence of statements *)
   | SBS_Seq: forall rΓ h s1 s2 rΓ' h' rΓ'' h'',
-      eval_stmt rΓ h s1 rΓ' h' ->
-      eval_stmt rΓ' h' s2 rΓ'' h'' ->
-      eval_stmt rΓ h (SSeq s1 s2) rΓ'' h''
+      eval_stmt OK rΓ h s1 OK rΓ' h' ->
+      eval_stmt OK rΓ' h' s2 OK rΓ'' h'' ->
+      eval_stmt OK rΓ h (SSeq s1 s2) OK rΓ'' h''
+
+  | SBS_Seq_NPE_first: forall rΓ h s1 s2 rΓ' h',
+      eval_stmt OK rΓ h s1 NPE rΓ' h' ->
+      eval_stmt OK rΓ h (SSeq s1 s2) NPE rΓ' h'
+
+  | SBS_Seq_NPE_second: forall rΓ h s1 s2 rΓ' h' rΓ'' h'',
+      eval_stmt OK rΓ h s1 OK rΓ' h' ->
+      eval_stmt OK rΓ' h' s2 NPE rΓ'' h'' ->
+      eval_stmt OK rΓ h (SSeq s1 s2) NPE rΓ'' h''
 .
 
 (* evaluate program *)
