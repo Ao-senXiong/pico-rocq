@@ -103,7 +103,7 @@ Proof.
           admit. (* Should get stuck because the type system does not prevent NPE*)
         -- (* Case: v = Iot loc *)
           destruct (runtime_getObj h l) eqn:Hgetval.
-          ++
+          ++ (* can find object by address l *)
             destruct (getVal o.(fields_map) v0) eqn:Hgetfield.
             ** (* Case: field exists *)
               exists (rΓ <| vars := update x v1 rΓ.(vars) |>), h.
@@ -138,8 +138,13 @@ Proof.
               unfold sf_def in H.
               unfold fields in H.
               admit. (* subtyping polymorphism*)
-          ++ (* well formedness of runtime environment*)
-            admit.
+          ++ (* can not find object by address l *)
+            exfalso.
+            unfold wf_renv in Hrenv.
+            eapply Forall_nth_error in Hrenv as Hfor; [| exact Hgety].
+            simpl in Hfor.
+            rewrite Hgetval in Hfor.
+            exact Hfor.
       *
         exfalso.
         apply runtime_getVal_not_dom in Hgety.
@@ -183,7 +188,7 @@ Proof.
     destruct Ind1 as [rΓ' [h' Ind1]]. specialize (preservation_pico CT sΓ rΓ h s1 rΓ' h' sΓ' H H0_ Ind1) as pre1.
     specialize (IHstmt_typing2 rΓ' h'). apply IHstmt_typing2 in pre1 as Ind2. destruct Ind2 as [rΓ'' [h'' Ind2]].
     exists rΓ'', h''. econstructor; eauto.
-Admitted.
+Admitted. 
 (* Qed. *)
 
 (* ------------------------------------------------------------- *)
