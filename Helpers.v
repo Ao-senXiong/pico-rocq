@@ -372,6 +372,19 @@ Proof.
     eauto with lia.
 Qed. *)
 
+Lemma Forall_nth_error {A} (P : A -> Prop) (l : list A) (n : nat) (x : A) :
+  Forall P l ->
+  nth_error l n = Some x ->
+  P x.
+Proof.
+  revert l. induction n as [|n IH]; intros l HForall Hnth.
+  - destruct l as [|y l']; simpl in *; [discriminate|].
+    inversion Hnth; subst. inversion HForall; subst. assumption.
+  - destruct l as [|y l']; simpl in *; [discriminate|].
+    inversion HForall; subst.
+    apply IH with (l := l'); assumption.
+Qed.
+
 (* ------------------------------------------------------------------------ *)
 (** ** Tactics *)
 
