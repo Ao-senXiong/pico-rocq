@@ -72,7 +72,7 @@ Record field_type := {
 (* Field declaration with assignability and mutability *)
 Record field_def := {
   ftype : field_type; (* Field type *)
-  fname : var; (* Field name *)
+  fname : var; (* Field name, the name should match the index from the field list *)
 }.
 
 Record constructor_body :={
@@ -117,7 +117,7 @@ Record class_body := {
 
 Record class_sig := {
   class_qualifier : q_c; (* Mutable, Immutable, or RDM *)
-  cname : class_name; (* Class name *)
+  cname : class_name; (* Class name, need to be the same as the index from class_table *)
   super : option class_name; (* Superclass name *)
 }.
 
