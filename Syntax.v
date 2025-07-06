@@ -5,8 +5,9 @@ From RecordUpdate Require Import RecordUpdate.
 
 (* ------------------SYNTAX------------------*)
 Definition var : Type := nat.
-Variant method_name : Type := Method_name(n: nat).
-Variant class_name : Type := Class_name(n: nat).
+Definition method_name : Type := nat.
+Definition class_name : Type := nat.
+
 (* Mutability qualifer *)
 Inductive q : Type :=
   (* q_c *)
