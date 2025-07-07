@@ -1,4 +1,4 @@
-Require Import Syntax Notations LibTactics Tactics.
+Require Import Syntax Notations LibTactics Tactics Helpers.
 Require Import List.
 Require Import Coq.Classes.RelationClasses.
 Import ListNotations.
@@ -31,24 +31,31 @@ Proof.
 Qed.
 Global Hint Resolve q_subtype_trans: typ.
 
+(* Find a class declaration in the class table *)
+Definition find_class (CT : class_table) (C : class_name) : option class_def :=
+    gget CT C.
+  
 (* Java base type subtyping *)
 Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
   | base_refl : forall (CT : class_table) (C : class_name),
+      (* Reflexivity of base subtyping *)
+      C < dom CT ->
       base_subtype CT C C
   | base_trans : forall (CT : class_table) (C D E : class_name),
       base_subtype CT C D ->
       base_subtype CT D E -> 
       base_subtype CT C E
-  | base_extends : forall (CT : class_table) (C D : class_name) (decl : class_def),
-      In decl CT ->
-      cname (signature decl) = C ->
-      super (signature decl) = Some D ->
+  | base_extends : forall (CT : class_table) (C D : class_name),
+      C < dom CT ->
+      D < dom CT ->
       base_subtype CT C D.
-Global Hint Constructors base_subtype: typ.      
+Global Hint Constructors base_subtype: typ.
 
 (* Qualified type subtyping *)
 Inductive qualified_type_subtype : class_table -> qualified_type -> qualified_type -> Prop :=
   | qtype_sub : forall CT qt1 qt2,
+	 		(sctype qt1) < (dom CT) ->
+      (sctype qt2) < (dom CT) ->
       q_subtype (sqtype qt1) (sqtype qt2) ->
       base_subtype CT (sctype qt1) (sctype qt2) ->
       qualified_type_subtype CT qt1 qt2
@@ -57,4 +64,40 @@ Inductive qualified_type_subtype : class_table -> qualified_type -> qualified_ty
       qualified_type_subtype CT qt2 qt3 ->
       qualified_type_subtype CT qt1 qt3
   | qtype_refl: forall CT qt,
-      qualified_type_subtype CT qt qt.    
+      (sctype qt) < (dom CT) ->
+      qualified_type_subtype CT qt qt.
+
+Lemma qualified_type_subtype_dom2 :
+  forall CT qt1 qt2,
+    qualified_type_subtype CT qt1 qt2 ->
+    sctype qt2 < dom CT.
+Proof.
+  intros CT qt1 qt2 H.
+  induction H.
+  - assumption.
+  - exact IHqualified_type_subtype2.
+  - assumption.
+Qed.
+
+Lemma qualified_type_subtype_base_subtype :
+  forall CT qt1 qt2,
+    qualified_type_subtype CT qt1 qt2 ->
+    (sctype qt1) < (dom CT) ->
+    (sctype qt2) < (dom CT) ->
+    base_subtype CT (sctype qt1) (sctype qt2).
+Proof.
+    intros CT qt1 qt2 H.
+    induction H.
+    generalize dependent qt1.
+    generalize dependent qt2.
+    - intros. exact H2.
+    - 
+      intros Hf1 Hf3.
+      apply qualified_type_subtype_dom2 in H as Hf2.
+      pose proof IHqualified_type_subtype1 Hf1 Hf2 as B1.
+      pose proof IHqualified_type_subtype2 Hf2 Hf3 as B2.
+      exact (base_trans _ _ _ _ B1 B2).
+    - 
+			intros. apply base_refl.
+			exact H.
+Qed.
