@@ -9,6 +9,7 @@ From RecordUpdate Require Import RecordUpdate.
 
 (* ------------------------------------------------------------------------ *)
 (** ** Helper functions *)
+Definition gget {X: Type} (l : list X)  : Loc -> option X := nth_error l.
 Definition runtime_getObj (l : heap)    : Loc -> option Obj := nth_error l.
 Definition getVal (l : list value)  : Loc -> option value := nth_error l.
 (* Definition getAVal (l : list (r_a * value) )  : Loc -> option (r_a * value) := nth_error l. *)

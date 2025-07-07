@@ -5,17 +5,6 @@ Import ListNotations.
 
 (* STATIC HELPER FUNCTIONS *)
 
-(* Find a class declaration in the class table *)
-Fixpoint find_class (CT : class_table) (C : class_name) : option class_def :=
-  match CT with
-  | [] => None
-  | def :: CT' =>
-      match cname (signature def), C with
-      | Class_name n1, Class_name n2 =>
-          if Nat.eqb n1 n2 then Some def else find_class CT' C
-      end
-  end.
-
 (* Class bound look up in the class table  *)
 Definition bound (CT : class_table) (C : class_name) : option q_c :=
   match find_class CT C with
@@ -40,7 +29,7 @@ Fixpoint collect_fields_fuel (fuel : nat) (CT : class_table) (C : class_name) : 
     | Some def =>
       let super_fields :=
         match super (signature def) with
-        | Some (Class_name n) => collect_fields_fuel fuel' CT (Class_name n)
+        | Some n => collect_fields_fuel fuel' CT n
         | None => []
         end in
       super_fields ++ fields (body def)
@@ -54,9 +43,7 @@ Definition fields := collect_fields.
 
 (* Static field def look up; We assume identifiers are globally unique  *)
 Definition sf_def (CT: class_table) (C: class_name) (f: var) : option field_def :=
-  match fields CT C with
-  | fs => find (fun fd => Nat.eqb (fname fd) f) fs
-  end.
+  gget (fields CT C) f.
 
 (* Static field assignablity lookup *)
 Definition sf_assignability (CT: class_table) (C: class_name) (f: var) : option a :=
@@ -96,13 +83,13 @@ Definition constructor_sig_lookup (CT : class_table) (C : class_name) : option c
 (* Helper to compare class names *)
 Definition eq_class_name (c1 c2 : class_name) : bool :=
   match c1, c2 with
-  | Class_name n1, Class_name n2 => Nat.eqb n1 n2
+  | n1, n2 => Nat.eqb n1 n2
   end.
 
 (* Helper to compare method names *)
 Definition eq_method_name (m1 m2 : method_name) : bool :=
   match m1, m2 with
-  | Method_name n1, Method_name n2 => Nat.eqb n1 n2
+  | n1, n2 => Nat.eqb n1 n2
   end.
 
 (* Method def lookup *)
@@ -153,6 +140,8 @@ Definition wf_field (CT : class_table) (f: field_def) : Prop :=
 
 (* Well-formedness of static environment *)
 Definition wf_senv (CT : class_table) (sΓ : s_env) : Prop :=
+  (* The first variable is the receiver and should always be present *)
+  dom sΓ > 0 /\
   Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) sΓ.
 
 (* EXPRESSION TYPING RULES *)
