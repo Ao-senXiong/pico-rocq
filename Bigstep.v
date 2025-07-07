@@ -40,39 +40,7 @@ Definition r_type (h: heap) (ι: Loc) : option runtime_type :=
   | Some o => Some (rt_type o)
   end.
 
-(* Get the runtime object at the field f. find the object on the heap 2. get the field mapping 3. return the object *)
-(* Definition field_obj (h: heap) (ι: Loc) (f: Loc) : option Obj :=
-  match getObj h ι with
-  | None => None
-  | Some o =>
-      match getAVal (fields_map o) f with
-      | None => None
-      | Some v =>
-          match v with
-          | Null_a r_a => None
-          | Iot r_a loc =>
-              match getObj h loc with
-              | None => None
-              | Some o' => Some o'
-              end
-          end
-      end
-  end. *)
-
 (* Determine whether an assignment should be allowed *)
-(* Definition can_assign (CT: class_table) (h: heap) (ι: Loc) (f: var) : bool :=
-  match getObj h ι with
-  | Some o =>
-      match getAVal o.(fields_map) f with
-      | Some (a, _) =>
-          match a with
-          | Assignable => true
-          | _ => false
-          end
-      | None => false
-      end
-  | None => false
-  end. *)
 Definition can_assign (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (f: var) : bool :=
   match r_muttype h ι, r_basetype h ι with
   | Some q, Some c =>
@@ -123,7 +91,7 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
       wf_rtypeuse CT (rt_type o).(rqtype) (rt_type o).(rctype) /\
       (* The runtime type of the object's fields are well-formed *)
       (* TODO: think about this, maybe the second case is not needed. Field type and runtime value type*)
-      Forall (fun v =>
+      (* Forall (fun v =>
         match v with
         | Null_a => True
         | Iot loc =>
@@ -131,15 +99,16 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
             | None => False
             | Some o' => wf_rtypeuse CT (rt_type o').(rqtype) (rt_type o').(rctype)
             end
-        end) (fields_map o) /\
+        end) (fields_map o) /\ *)
       (* The number of fields are the same at runtime and static type *)
       List.length (fields_map o) = List.length (collect_fields CT (rt_type o).(rctype))
   end.
 
-(* TODO: here I need extra lemma that sub class have equal or more fields *)
-
 (* Wellformed Runtime environment: a rΓ is well formed if for all variable in its domain, it maps to null_a or a value in the domin of heap *)
 Definition wf_renv (CT: class_table) (rΓ: r_env) (h: heap) : Prop :=
+  (* The first variable is the receiver and should always be present as non-null value *)
+  dom rΓ.(vars) > 0 /\
+  (forall iot, gget rΓ.(vars) 0 = Some (Iot iot)) /\
   Forall (fun value =>
     match value with
     | Null_a => True
@@ -149,22 +118,6 @@ Definition wf_renv (CT: class_table) (rΓ: r_env) (h: heap) : Prop :=
         | Some _ => True
         end
     end) rΓ.(vars).
-
-(* Lemma object_not_he_than_renv : forall CT rΓ h,
-    wf_renv CT rΓ h ->
-    runtime_getObj_.
-Proof.
-  intros CT rΓ h Hwf.
-  unfold wf_renv in Hwf.
-  remember (List.length h) as n.
-  induction n as [|n' IH].
-  - lia.
-  - replace (S n') with (List.length h) by (symmetry; exact Heqn).
-    remember (List.length h) as n.
-    remember (List.length rΓ.(vars)) as m.
-
-    lia.
-Qed. *)
 
 (* Wellformed Runtime Heap: a heap is well-formed if all objects in it are well-formed *)
 Definition wf_heap (CT: class_table) (h: heap) : Prop :=
@@ -184,7 +137,68 @@ Definition wf_r_typable (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (sqt:
   | _, _ => False
   end.
 
-(* Lemma collect_fields_fuel_step :
+(* If a heap location is typable by T, its runtime object's base type must be a subtype of T0 *)
+Lemma r_obj_subtype_sqt :
+  forall CT rΓ h ι sqt o rt,
+    wf_r_typable CT rΓ h ι sqt ->
+    runtime_getObj h ι = Some o ->
+    rctype (rt_type o) = rt ->
+    base_subtype CT rt (sctype sqt).
+Proof.
+  intros CT rΓ h ι sqt rqt H Hwf Hbasetype.
+  unfold wf_r_typable in Hwf.
+  remember (r_type h ι) as T eqn:Hr_type.
+  destruct T as [rqt'|].
+  -
+    remember (get_this_var_mapping (vars rΓ)) as mthis eqn:Hgetthis.
+    destruct mthis as [ι'|].
+    + 
+      destruct (r_muttype h ι') as [q|] eqn:Hmuttype.
+      * 
+        apply qualified_type_subtype_base_subtype with (CT := CT) in Hwf.
+        admit.
+        admit.
+        admit.
+      * 
+        exfalso. (* r_muttype should not be None if r_basetype is Some *)
+        auto.
+    +
+      exfalso. (* get_this_var_mapping should not be None if r_basetype is Some *)
+      auto.
+  - 
+    exfalso. (* r_type should not be None if r_basetype is Some *)
+    auto.
+Admitted.
+
+(* TODO: AOSEN do we need this lemma to generalize to + k instead + 1? *)
+Lemma collect_fields_fuel_fuel_increase :
+  forall fuel CT C decl,
+    find_class CT C = Some decl ->
+    fuel >= dom CT ->
+    collect_fields_fuel fuel CT C = collect_fields_fuel (S fuel) CT C.
+Proof.
+  intros.
+  induction fuel as [|fuel' IH].
+  -
+    exfalso.
+    unfold find_class in H.
+    destruct CT as [|hd tl].
+    + simpl in H.
+      unfold gget in H.
+      rewrite nth_error_nil in H. discriminate.
+    + simpl in H0. lia.
+  - simpl.
+    destruct (find_class CT C) as [def|] eqn:Hfind; [| reflexivity].
+    + 
+    destruct (super (signature def)) as [superC|]; [| reflexivity].
+    (* apply IH. *)
+    admit.
+      (* * f_equal. apply IH. lia.
+      * reflexivity.
+    + reflexivity. *)
+Admitted.
+
+Lemma collect_fields_fuel_step :
   forall fuel CT C decl,
     find_class CT C = Some decl ->
     forall superC,
@@ -196,10 +210,9 @@ Proof.
   simpl.
   rewrite Hfind.
   rewrite Hsuper.
-  destruct superC as [n].
   simpl.
   reflexivity.
-Qed.  
+Qed.
 
 Lemma collect_fields_monotone :
   forall CT Csub Csup,
@@ -214,37 +227,22 @@ Proof.
   -
     exact (Nat.le_trans _ _ _ IHHsub2 IHHsub1).
   -
-    rename decl into def.
-    unfold collect_fields_fuel at 2.
-    rewrite H.
-    rewrite H1.
-    apply Nat.le_add_r.
-Qed.
-
-
-Lemma qualified_type_subtype_fields :
-forall CT T1 T2,
-  qualified_type_subtype CT T1 T2 ->
-  dom (collect_fields CT (sctype T1)) <= dom (collect_fields CT (sctype T2)).
-Proof.
-intros CT T1 T2 Hsub.
-induction Hsub; simpl.
-remember (sctype qt1) as Csub.
-remember (sctype qt2) as Csup.
--
-  unfold collect_fields.
-  unfold collect_fields_fuel.
-  auto.
-
-(* Runtime object typable has more fields compared to its static type *)
-Lemma r_obj_more_fields_than_sqt :
-  forall CT rΓ h ι sqt rqt,
-    wf_r_typable CT rΓ h ι sqt ->
-    r_basetype h ι = Some rqt ->
-    List.length (collect_fields CT rqt) >= List.length (collect_fields CT (sqt.(sctype))).
-Proof.
-intros.
-unfold wf_r_typable in H.   *)
+    destruct (find_class CT C) as [declsub|] eqn:Hfindsub.
+    +
+      specialize (collect_fields_fuel_step dom CT CT C declsub Hfindsub) as Hstep.
+      destruct (super (signature declsub)) as [superC|] eqn:Hsuper.
+      *
+        admit.
+      *
+        admit.   
+    +
+      exfalso. unfold find_class in Hfindsub. unfold gget in Hfindsub.
+      apply nth_error_Some in H.
+      congruence.
+    (* apply Hstep.
+    rewrite dom_app.
+    apply Nat.le_add_r. *)
+Admitted.
 
 (* Wellformed Runtime Config: if (1) heap is well formed (2) static env is well formed (3) runtime env is well formed (4) the static env and run time env corresponds  *)
 Definition wf_r_config (CT: class_table) (sΓ: s_env) (rΓ: r_env) (h: heap)  : Prop :=
@@ -344,7 +342,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
       runtime_getVal rΓ x = None ->
       eval_stmt OK rΓ h (SLocal T x) OK
       (* (rΓ <|vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
-      (rΓ <|vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars)|> )
+      (rΓ <|vars := rΓ.(vars)++[Null_a] |> )
       h
 
   (* evaluate variable assignment statement *)
@@ -363,7 +361,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
     (* (rΓ <|vars := update x v2 rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
     (* (rΓ <|vars := update x v2 rΓ.(vars)|>) *)
     rΓ'
-    h'   
+    h'
 
   (* evaluate field write statement *)
   | SBS_FldWrite: forall CT rΓ h x f y lx o vf v2 h',
@@ -388,7 +386,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
       qthis = q_r_proj qthisr ->
       q_project_q_r (vpa_mutabilty qthis (q_c_proj q_c)) = Some qadapted -> 
       o = mkObj (mkruntime_type qadapted c) (vals) ->
-      h' = update (List.length h + 1) o h ->
+      h' = h++[o] ->
       rΓ' = rΓ <| vars := update x (Iot (List.length h')) rΓ.(vars) |> ->
       eval_stmt OK rΓ h (SNew x q_c c ys) OK rΓ' h'
 
