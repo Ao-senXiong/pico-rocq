@@ -16,6 +16,7 @@ Theorem preservation_pico :
 Proof.
   intros.
   generalize dependent h. generalize dependent rΓ.
+  generalize dependent h'. generalize dependent rΓ'.
   induction H0.
   - (* Case: stmt = Skip *)
     intros.
@@ -62,6 +63,10 @@ Proof.
   - (* Case: stmt = Call *)
     admit.
   - (* Case: stmt = Seq *)
+    intros. inversion H1; subst.
+    specialize (IHstmt_typing1 rΓ'0 h'0 rΓ h H H3) as IH1.
+    specialize (IHstmt_typing2 rΓ' h' rΓ'0 h'0 IH1 H6) as IH2.
+    exact IH2.
 Admitted.
 
 Theorem progress_pico :
