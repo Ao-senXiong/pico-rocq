@@ -139,6 +139,14 @@ Proof.
 Qed.
 Global Hint Resolve runtime_getObj_dom: updates.
 
+Lemma runtime_getObj_not_dom:
+  forall l h, runtime_getObj h l = None -> l >= dom h.
+Proof.
+  unfold runtime_getObj.
+  intros; eapply nth_error_None; eauto.
+Qed.
+Global Hint Resolve runtime_getObj_dom: updates.
+
 Lemma getVal_dom:
   forall l v ρ, getVal ρ l = Some v -> l < dom ρ.
 Proof.
