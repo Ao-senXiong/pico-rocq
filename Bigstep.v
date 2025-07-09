@@ -244,6 +244,24 @@ Proof.
     apply Nat.le_add_r. *)
 Admitted.
 
+(* Typable preserve assignability *)
+Lemma r_typable_assignable :
+  forall CT rΓ h ι sqt,
+    ι < dom h ->
+    wf_r_typable CT rΓ h ι sqt ->
+    forall q f sa ra, 
+    r_muttype h ι = Some q ->
+    sf_assignability CT (sctype sqt) f = Some sa ->
+    vpa_assignability (sqtype sqt) sa = Assignable ->
+    vpa_assignability (q_r_proj q) ra = Assignable.
+Proof.
+  intros.
+  unfold wf_r_typable in H0.
+  unfold r_muttype in H1.
+  destruct (r_type h ι) as [rqt|] eqn:Hr_type; [|exfalso; unfold r_type in Hr_type; auto].
+Admitted.
+
+
 (* Wellformed Runtime Config: if (1) heap is well formed (2) static env is well formed (3) runtime env is well formed (4) the static env and run time env corresponds  *)
 Definition wf_r_config (CT: class_table) (sΓ: s_env) (rΓ: r_env) (h: heap)  : Prop :=
   (* class_def in CT are wellformed  *)
