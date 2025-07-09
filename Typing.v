@@ -190,13 +190,14 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       stmt_typing CT sΓ (SVarAss x e) sΓ
 
   (* Field write *)
-  | ST_FldWrite : forall CT sΓ x f y Tx Ty fieldT,
+  | ST_FldWrite : forall CT sΓ x f y Tx Ty fieldT a,
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType sΓ y = Some Ty ->
       sf_def CT (sctype Tx) f = Some fieldT ->
+      sf_assignability CT (sctype Tx) f = Some a ->
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Tx) (Build_qualified_type (q_f_proj (mutability (ftype fieldT))) (f_base_type (ftype fieldT)))) ->
-      vpa_assignability (sqtype Tx) (assignability (ftype fieldT)) = Assignable ->
+      vpa_assignability (sqtype Tx) a = Assignable ->
       stmt_typing CT sΓ (SFldWrite x f y) sΓ
 
   (* Object creation *)
