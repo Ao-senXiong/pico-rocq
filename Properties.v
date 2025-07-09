@@ -232,7 +232,7 @@ Proof.
         apply SBS_FldWrite_NPE.
         exact Hgetx.
       * (* Case: v = Iot loc *)
-        destruct H as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+        destruct H7 as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
         destruct (runtime_getObj h l) eqn:Hgetval.
         -- (* can find object by address l *)
           destruct (getVal o.(fields_map) f) eqn:Hgetfield.
@@ -243,11 +243,77 @@ Proof.
               left.
               apply SBS_FldWrite with (CT := CT) (lx := l) (o := o) (vf := v) (v2 := vy); [exact Hgetx | exact Hgetval | exact Hgetfield | exact Hgety | | reflexivity].
               unfold can_assign.
-              admit. (* Qualifier subtyping lemma *)
+              destruct (r_muttype h l) as [qrecv |] eqn:Hgetrecv.
+              ---
+                destruct (r_basetype h l) as [C |] eqn:Hgetbasetype;[| unfold r_basetype in Hgetbasetype; rewrite Hgetval in Hgetbasetype; discriminate].
+                destruct (sf_assignability CT C f) as [af | ] eqn:Hgetassignability.
+                +++ (* Case: field is assignable *)
+                destruct (ViewpointAdaptation.vpa_assignability (q_r_proj qrecv) af) as [adaptedaf | |] eqn:Hgetadaptedassignability.
+                *** (* Case: field is assignable *)
+                  reflexivity.
+                *** (* Case: field is final *)
+                  exfalso.
+                  assert (Hx : x < dom sΓ).
+                  {
+                    unfold static_getType in H2.
+                    apply nth_error_Some; eauto.
+                  }
+                  specialize (Hresult x Hx Tx H2).
+                  rewrite Hgetx in Hresult.
+                  assert (Hldom : l < dom h).
+                  { apply runtime_getObj_dom in Hgetval. exact Hgetval. }
+                  eapply r_typable_assignable with (sqt := Tx) (q := qrecv) (f := f) (sa := H0) (ra := af) in H6; eauto.
+                *** (* Case: field is RDA *)
+                  exfalso.
+                  assert (Hx : x < dom sΓ).
+                  {
+                    unfold static_getType in H2.
+                    apply nth_error_Some; eauto.
+                  }
+                  specialize (Hresult x Hx Tx H2).
+                  rewrite Hgetx in Hresult.
+                  assert (Hldom : l < dom h).
+                  { apply runtime_getObj_dom in Hgetval. exact Hgetval. }
+                  eapply r_typable_assignable with (sqt := Tx) (q := qrecv) (f := f) (sa := H0) (ra := af) in H6; eauto.
+                +++ (* Case: Did not find the field *)
+                exfalso.
+                unfold sf_assignability in Hgetassignability.
+                assert (sf_def CT C f = None).
+                {
+                  destruct (sf_def CT C f); inversion Hgetassignability; reflexivity.
+                }
+                unfold wf_heap in Hheap.
+                assert (Hwf_o: wf_obj CT h l).
+                {
+                  apply Hheap.
+                  apply runtime_getObj_dom in Hgetval.
+                  exact Hgetval.
+                }
+                unfold wf_obj in Hwf_o.
+                rewrite Hgetval in Hwf_o.
+                destruct Hwf_o as [Hwftypeo Hdomo].
+                unfold sf_def in H7.
+                unfold gget in H7.
+                apply getVal_dom in Hgetfield.
+                apply nth_error_None in H7.
+                unfold fields in H7.
+                assert (rctype (rt_type o) = C).
+                {
+                  unfold r_basetype in Hgetbasetype.
+                  rewrite Hgetval in Hgetbasetype.
+                  inversion Hgetbasetype; reflexivity.
+                }
+                rewrite <- H8 in H7.
+                lia.
+              ---
+                exfalso.
+                unfold r_muttype in Hgetrecv.
+                rewrite Hgetval in Hgetrecv.
+                discriminate. 
             ** 
               exfalso.
               apply runtime_getVal_not_dom in Hgety.
-              apply static_getType_dom in H2.
+              apply static_getType_dom in H3.
               lia.
           ++ (* Case: field does not exist *)
             exfalso.
@@ -264,21 +330,21 @@ Proof.
             destruct Hwf_o' as [_ Hdom_eq].
             apply getVal_not_dom in Hgetfield.
             rewrite Hdom_eq in Hgetfield.
-            unfold sf_def in H3.
-            unfold fields in H3.
+            unfold sf_def in H4.
+            unfold fields in H4.
             assert (x < dom sΓ) as Hx.
             {
-              unfold static_getType in H1.
+              unfold static_getType in H2.
               apply nth_error_Some; eauto.
             }
-            specialize (Hresult x Hx Tx H1).
+            specialize (Hresult x Hx Tx H2).
             rewrite Hgetx in Hresult.
             apply r_obj_subtype_sqt with (o := o) (rt := rctype
             (rt_type o)) in Hresult; [| exact Hgetval | reflexivity ].
             unfold gget in Hx.
             assert (f < dom (collect_fields CT (sctype Tx))) as Hf.
             {
-              unfold gget in H3.
+              unfold gget in H4.
               apply nth_error_Some.
               auto.
             }
@@ -301,8 +367,8 @@ Proof.
     + (* can not find x in runtime env*)
       exfalso.
       apply runtime_getVal_not_dom in Hgetx.
-      apply static_getType_dom in H1.
-      destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+      apply static_getType_dom in H2.
+      destruct H7 as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
       lia.
   - (* Case: stmt = new *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
@@ -320,7 +386,12 @@ Proof.
           specialize (Hreceiverval 0).
           discriminate.
         -- (* Case: vrecv = Iot iot *)
+          (* eapply SBS_New. *)
           admit.
+          (* ++ unfold runtime_getVal. exact Hgetrecv.
+          ++ admit.
+          ++ 
+          admit. *)
       * (* Case: receiver is None *)
         exfalso.
         specialize (Hreceiverval 0).
