@@ -30,8 +30,14 @@ Proof.
     repeat split.
     + (* wellformed class *) exact Hclass.
     + (* wellformed heap *) exact Hheap.
+    + (* Length of runtime environment greater than 0 *)
+    admit.
+    + (* The first element of runtime environment is not null *)
+    admit.
     + (* wellformed runtime environment *)  
     unfold wf_renv in *.
+    admit.
+    + (* Length of static environment greater than 0 *)
     admit.
     + (* wellformed static environment *)
       unfold wf_senv in *.
@@ -43,9 +49,9 @@ Proof.
       (* rewrite length_app. simpl. lia. *)
     + (* correspondence between static and runtime environments *)
       admit.
+    (* + admit.
     + admit.
-    + admit.
-    + admit.
+    + admit. *)
         (* intros i Hi sqt Hnth.
         destruct (Nat.eq_dec i (List.length sΓ + 1)).
         * (* i = last index, new variable *)
@@ -376,26 +382,58 @@ Proof.
     destruct Hrenv as [Hreceiver [Hreceiverval Hrenv]].
     + (* can find x in runtime env*)
       (* TODO(AOSEN): update the heap here  *)
-      exists (rΓ <| vars := update x (Iot (dom h + 1)) rΓ.(vars) |>), h.
-      left.
-      destruct (gget (vars rΓ) 0) as [vrecv |] eqn:Hgetrecv.
-      * (* Case: receiver is a variable *)
-       destruct vrecv as [|iot].
-        -- (* Case: vrecv = Null_a *)
-          exfalso.
-          specialize (Hreceiverval 0).
-          discriminate.
-        -- (* Case: vrecv = Iot iot *)
-          (* eapply SBS_New. *)
-          admit.
-          (* ++ unfold runtime_getVal. exact Hgetrecv.
-          ++ admit.
-          ++ 
-          admit. *)
-      * (* Case: receiver is None *)
+      destruct (runtime_lookup_list rΓ args) as [args' |] eqn:Hlookup.
+      2:{
+        admit.
+      }
+      destruct Hreceiverval as [iot Hgetrecv].
+      destruct (r_muttype h iot) as [qrecv |] eqn:Hgetrecvmut.
+      2:{
         exfalso.
-        specialize (Hreceiverval 0).
-        discriminate.    
+        unfold r_muttype in Hgetrecvmut.
+        destruct (runtime_getObj h iot) eqn:Hobj.
+        * discriminate.
+        * 
+          apply Forall_forall with (x := Iot iot) in Hrenv.
+          -- rewrite Hobj in Hrenv. auto.
+          -- unfold gget in Hgetrecv. apply nth_error_In with (n := 0). rewrite Hgetrecv. reflexivity.
+      }
+      destruct (q_project_q_r (ViewpointAdaptation.vpa_mutabilty (q_r_proj qrecv) (q_c_proj q))) as [qadapted |] eqn:Hgetqadapted.
+      2:{
+        exfalso.
+        destruct (q_r_proj qrecv) eqn: hqrecvproj.
+        * 
+          destruct (q_c_proj q) eqn: hnewqproj.
+          -- simpl in Hgetqadapted. discriminate.
+          -- simpl in Hgetqadapted. discriminate.
+          -- simpl in Hgetqadapted. discriminate.
+          -- destruct q as [qval Hqval]. unfold q_c_proj in hnewqproj. simpl in hnewqproj. subst qval. destruct Hqval as [Hmut | [Himm | Hrmd]]; subst; discriminate.
+          -- destruct q as [qval Hqval]. unfold q_c_proj in hnewqproj. simpl in hnewqproj. subst qval. destruct Hqval as [Hmut | [Himm | Hrmd]]; subst; discriminate.
+          -- destruct q as [qval Hqval]. unfold q_c_proj in hnewqproj. simpl in hnewqproj. subst qval. destruct Hqval as [Hmut | [Himm | Hrmd]]; subst; discriminate.
+        *
+          destruct (q_c_proj q) eqn: hnewqproj.
+          -- simpl in Hgetqadapted. discriminate.
+          -- simpl in Hgetqadapted. discriminate.
+          -- simpl in Hgetqadapted. discriminate.
+          -- destruct q as [qval Hqval]. unfold q_c_proj in hnewqproj. simpl in hnewqproj. subst qval. destruct Hqval as [Hmut | [Himm | Hrmd]]; subst; discriminate.
+          -- destruct q as [qval Hqval]. unfold q_c_proj in hnewqproj. simpl in hnewqproj. subst qval. destruct Hqval as [Hmut | [Himm | Hrmd]]; subst; discriminate.
+          -- destruct q as [qval Hqval]. unfold q_c_proj in hnewqproj. simpl in hnewqproj. subst qval. destruct Hqval as [Hmut | [Himm | Hrmd]]; subst; discriminate.
+        * destruct qrecv as [qval Hqval]. unfold q_r_proj in hqrecvproj. simpl in hqrecvproj. subst qval. destruct Hqval as [Hmut | Himm ]; subst; discriminate.
+        * destruct qrecv as [qval Hqval]. unfold q_r_proj in hqrecvproj. simpl in hqrecvproj. subst qval. destruct Hqval as [Hmut | Himm ]; subst; discriminate.
+        * destruct qrecv as [qval Hqval]. unfold q_r_proj in hqrecvproj. simpl in hqrecvproj. subst qval. destruct Hqval as [Hmut | Himm ]; subst; discriminate.
+        * destruct qrecv as [qval Hqval]. unfold q_r_proj in hqrecvproj. simpl in hqrecvproj. subst qval. destruct Hqval as [Hmut | Himm ]; subst; discriminate.
+      }
+      exists (rΓ <| vars := update x (Iot (dom h + 1)) rΓ.(vars) |>), (h ++ [mkObj (mkruntime_type qadapted C) args']).      left.
+      * (* Case: receiver is a variable *)
+        eapply SBS_New.
+        ++ exact Hgetrecv.
+        ++ exact Hlookup.
+        ++ exact Hgetrecvmut.
+        ++ reflexivity.
+        ++ exact Hgetqadapted.
+        ++ reflexivity.
+        ++ reflexivity.
+        ++ reflexivity.
     + (* can not find x in runtime env*)
       exfalso.
       apply runtime_getVal_not_dom in Hgetx.
@@ -404,6 +442,7 @@ Proof.
       lia.
   - (* Case: stmt = call *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
+    destruct H as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
     + (* can find x in runtime env*)
       destruct (runtime_getVal rΓ y) eqn:Hgety.
       * (* can find y in runtime env *)
@@ -414,12 +453,41 @@ Proof.
           apply SBS_Call_NPE.
           exact Hgety.
         -- (* Case: v0 = Iot loc *)
-          admit.
+          destruct (runtime_lookup_list rΓ args) as [args' |] eqn:Hlookup.
+          2:{
+            admit.
+          }
+          destruct (r_basetype h l) as [C |] eqn:Hgetbasetype.
+          2:{
+            exfalso.
+            unfold r_basetype in Hgetbasetype.
+            destruct (runtime_getObj h l) eqn:Hobj.
+            * discriminate.
+            * 
+              unfold wf_renv in Hrenv.
+              destruct Hrenv as [Hreceiver [Hreceiverval Hrenv]].
+              apply Forall_forall with (x := Iot l) in Hrenv.
+              -- rewrite Hobj in Hrenv. auto.
+              -- unfold runtime_getVal in Hgety. apply nth_error_In with (n := y). rewrite Hgety. reflexivity.
+          }
+          remember (mkr_env (Iot l :: args')) as rΓ'.
+          exists rΓ h.
+          left.
+          eapply SBS_Call.
+          ++ exact Hgety.
+          ++ exact Hgetbasetype.
+          ++ admit.
+          ++ reflexivity.
+          ++ reflexivity.
+          ++ exact Hlookup.
+          ++ exact HeqrΓ'.
+          ++ admit.
+          ++ admit.
+          ++ admit.
       * (* can not find y in runtime env *)
         exfalso.
         apply runtime_getVal_not_dom in Hgety.
         apply static_getType_dom in H2.
-        destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
         lia.
     + (* can not find x in runtime env*)
       exfalso.
