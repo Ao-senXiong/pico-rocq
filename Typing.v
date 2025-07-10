@@ -217,7 +217,7 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       static_getType sΓ x = Some Tx ->
       static_getType sΓ y = Some Ty ->
       static_getType_list sΓ args = Some argtypes ->
-      method_sig_lookup CT (sctype Tx) m = Some m_sig ->
+      method_sig_lookup CT (sctype Ty) m = Some m_sig ->
       qualified_type_subtype CT (vpa_qualified_type (sqtype Ty) (mret m_sig)) Tx -> (* assignment subtype checking*)
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreciever m_sig)) -> (* receiver subtype checking *) 
       Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (sqtype Ty) T)) argtypes (mparams m_sig) -> (* argument subtype checking *)
