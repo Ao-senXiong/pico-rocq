@@ -110,7 +110,7 @@ Fixpoint mdef_lookup (fuel : nat) (CT : class_table) (C : class_name) (m : metho
         end
       end
     end
-  end .
+  end.
 
 (* Method signature lookup *)
 Definition method_sig_lookup (CT : class_table) (C : class_name) (m : method_name) : option (method_sig) :=

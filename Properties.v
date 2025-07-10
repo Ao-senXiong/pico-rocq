@@ -471,12 +471,19 @@ Proof.
               -- unfold runtime_getVal in Hgety. apply nth_error_In with (n := y). rewrite Hgety. reflexivity.
           }
           remember (mkr_env (Iot l :: args')) as rΓ'.
+          destruct (method_body_lookup CT C m) eqn:Hlookupmbody.
+          2:{
+            exfalso.
+            (* AOSEN: Method lookup and dynamic dispatch *)
+            (* specialize (Hresult y). *)
+            admit.
+          }
           exists rΓ h.
           left.
           eapply SBS_Call.
           ++ exact Hgety.
           ++ exact Hgetbasetype.
-          ++ admit.
+          ++ exact Hlookupmbody.
           ++ reflexivity.
           ++ reflexivity.
           ++ exact Hlookup.
