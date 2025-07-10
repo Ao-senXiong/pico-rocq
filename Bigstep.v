@@ -89,17 +89,6 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
   | Some o =>
       (* The runtime type of the object is well-formed *)
       wf_rtypeuse CT (rt_type o).(rqtype) (rt_type o).(rctype) /\
-      (* The runtime type of the object's fields are well-formed *)
-      (* TODO: think about this, maybe the second case is not needed. Field type and runtime value type*)
-      (* Forall (fun v =>
-        match v with
-        | Null_a => True
-        | Iot loc =>
-            match runtime_getObj h loc with
-            | None => False
-            | Some o' => wf_rtypeuse CT (rt_type o').(rqtype) (rt_type o').(rctype)
-            end
-        end) (fields_map o) /\ *)
       (* The number of fields are the same at runtime and static type *)
       List.length (fields_map o) = List.length (collect_fields CT (rt_type o).(rctype))
   end.
@@ -400,7 +389,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
       eval_stmt OK rΓ h (SFldWrite x f y) NPE rΓ' h'
 
   (* evaluate object creation statement *)
-  | SBS_New: forall rΓ h x q_c c ys vals l1 qthisr qthis qadapted o rΓ' h',
+  | SBS_New: forall rΓ h x (q_c:q_c) c ys vals l1 qthisr qthis qadapted o rΓ' h',
       runtime_getVal rΓ 0 = Some (Iot l1) ->
       runtime_lookup_list rΓ ys = Some vals ->
       r_muttype h l1 = Some qthisr ->
