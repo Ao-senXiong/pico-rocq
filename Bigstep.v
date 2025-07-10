@@ -108,7 +108,7 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
 Definition wf_renv (CT: class_table) (rΓ: r_env) (h: heap) : Prop :=
   (* The first variable is the receiver and should always be present as non-null value *)
   dom rΓ.(vars) > 0 /\
-  (forall iot, gget rΓ.(vars) 0 = Some (Iot iot)) /\
+  (exists iot, gget rΓ.(vars) 0 = Some (Iot iot)) /\
   Forall (fun value =>
     match value with
     | Null_a => True
@@ -249,9 +249,11 @@ Lemma r_typable_assignable :
   forall CT rΓ h ι sqt,
     ι < dom h ->
     wf_r_typable CT rΓ h ι sqt ->
-    forall q f sa ra, 
+    forall q rt f sa ra, 
     r_muttype h ι = Some q ->
+    r_basetype h ι = Some rt ->
     sf_assignability CT (sctype sqt) f = Some sa ->
+    sf_assignability CT rt f = Some ra ->
     vpa_assignability (sqtype sqt) sa = Assignable ->
     vpa_assignability (q_r_proj q) ra = Assignable.
 Proof.
@@ -259,6 +261,7 @@ Proof.
   unfold wf_r_typable in H0.
   unfold r_muttype in H1.
   destruct (r_type h ι) as [rqt|] eqn:Hr_type; [|exfalso; unfold r_type in Hr_type; auto].
+
 Admitted.
 
 
@@ -405,7 +408,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
       q_project_q_r (vpa_mutabilty qthis (q_c_proj q_c)) = Some qadapted -> 
       o = mkObj (mkruntime_type qadapted c) (vals) ->
       h' = h++[o] ->
-      rΓ' = rΓ <| vars := update x (Iot (List.length h')) rΓ.(vars) |> ->
+      rΓ' = rΓ <| vars := update x (Iot (dom h + 1)) rΓ.(vars) |> ->
       eval_stmt OK rΓ h (SNew x q_c c ys) OK rΓ' h'
 
   (* evaluate method call statement *)
