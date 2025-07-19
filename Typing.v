@@ -112,6 +112,10 @@ Fixpoint mdef_lookup (fuel : nat) (CT : class_table) (C : class_name) (m : metho
     end
   end.
 
+(* Method definition lookup  *)
+Definition method_def_lookup (CT : class_table) (C : class_name) (m : method_name) : option method_def :=
+  mdef_lookup (length CT) CT C m.
+
 (* Method signature lookup *)
 Definition method_sig_lookup (CT : class_table) (C : class_name) (m : method_name) : option (method_sig) :=
   match mdef_lookup (length CT) CT C m with
@@ -130,7 +134,8 @@ Definition method_body_lookup (CT : class_table) (C : class_name) (m : method_na
 (* Well-formedness of type use *)
 Definition wf_stypeuse (CT : class_table) (q1: q) (c: class_name) : Prop :=
   match bound CT c with
-  | Some q_c_val => q_subtype (vpa_mutabilty q1 (q_c_proj (q_c_val))) q1
+  | Some q_c_val => q_subtype (vpa_mutabilty q1 (q_c_proj (q_c_val))) q1 /\ 
+                   c < dom CT
   | None => False (* or False, depending on your semantics *)
   end.
 
