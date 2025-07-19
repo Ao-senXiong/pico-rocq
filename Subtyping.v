@@ -34,6 +34,21 @@ Global Hint Resolve q_subtype_trans: typ.
 (* Find a class declaration in the class table *)
 Definition find_class (CT : class_table) (C : class_name) : option class_def :=
     gget CT C.
+
+Lemma find_class_dom : forall CT C x,
+  find_class CT C = Some x -> C < dom CT.
+Proof.
+  intros. unfold find_class in H. apply gget_dom in H. exact H.
+Qed.
+
+Lemma find_class_not_dom: forall CT C,
+  find_class CT C = None -> C >= dom CT.
+Proof.
+  intros CT C H.
+  unfold find_class in H.
+  apply gget_not_dom in H.
+  exact H.
+Qed.
   
 (* Java base type subtyping *)
 Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
