@@ -77,8 +77,7 @@ Definition wf_rtypeuse (CT: class_table) (q: q_r) (c: class_name) : Prop :=
   | None => False
   | Some q' =>
       match (vpa_mutabilty (q_r_proj q) (q_c_proj q')) with
-      | q => True
-      (* | _ => False TODO: why redudent? *)
+      | q => c < dom CT
       end
   end.
 
@@ -264,8 +263,6 @@ Definition wf_r_config (CT: class_table) (sΓ: s_env) (rΓ: r_env) (h: heap)  : 
   wf_renv CT rΓ h /\
   (* Static environment is well-formed *)
   wf_senv CT sΓ /\
-  (* Additional invariant required by the proof *)
-  (* (forall x, static_lookup sΓ x = None -> getVal (vars rΓ) x = None) /\ *)
   (* Static and runtime environment correspond *)
   List.length sΓ = List.length rΓ.(vars) /\
   forall i, i < List.length sΓ ->
@@ -314,6 +311,7 @@ Global Hint Resolve not_in_both_env: rch.
 
 Inductive eval_result :=
 | OK : eval_result
+| MUTATIONEXP: eval_result
 | NPE : eval_result.
 
 (* PICO expression evaluation *)
