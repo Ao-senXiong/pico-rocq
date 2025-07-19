@@ -131,6 +131,24 @@ Proof.
 Qed.
 Global Hint Resolve update_length: updates.
 
+Lemma gget_dom :
+  forall {X : Type} (l : list X) (C : Loc) x,
+    gget l C = Some x -> C < length l.
+Proof.
+  unfold gget.
+  intros. eapply nth_error_Some; eauto.
+Qed.
+Global Hint Resolve gget_dom: updates.
+
+Lemma gget_not_dom :
+  forall {X : Type} (l : list X) (C : Loc),
+    gget l C = None -> C >= length l.
+Proof.
+  unfold gget.
+  intros. eapply nth_error_None; eauto.
+Qed.
+Global Hint Resolve gget_not_dom: updates.
+
 Lemma runtime_getObj_dom:
   forall l O h, runtime_getObj h l = Some O -> l < dom h.
 Proof.
