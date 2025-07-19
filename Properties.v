@@ -1,4 +1,4 @@
-Require Import Syntax Notations Helpers Typing Bigstep.
+Require Import Syntax Notations Helpers Typing Subtyping Bigstep.
 Require Import List.
 Import ListNotations.
 Require Import String.
@@ -442,7 +442,7 @@ Proof.
       lia.
   - (* Case: stmt = call *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
-    destruct H as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+    destruct H as [ Hclass [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
     + (* can find x in runtime env*)
       destruct (runtime_getVal rΓ y) eqn:Hgety.
       * (* can find y in runtime env *)
@@ -457,26 +457,76 @@ Proof.
           2:{
             admit.
           }
+          destruct (runtime_getObj h l) eqn:Hobj.
+          2:{
+            exfalso.
+            unfold wf_heap in Hheap.
+            apply runtime_getObj_not_dom in Hobj.
+            unfold wf_renv in Hrenv.
+            destruct Hrenv as [Hreceiver [Hreceiverval Hrenv]].
+            eapply Forall_nth_error in Hrenv as Hfor; [| exact Hgety].
+            simpl in Hfor. unfold runtime_getObj in Hfor.
+            destruct (nth_error h l) eqn:Hnth.
+            - (* nth_error h l = Some _ *)
+              apply nth_error_None in Hobj. rewrite Hobj in Hnth. discriminate.
+            - (* nth_error h l = None *)
+              exact Hfor.
+          }
           destruct (r_basetype h l) as [C |] eqn:Hgetbasetype.
           2:{
             exfalso.
             unfold r_basetype in Hgetbasetype.
-            destruct (runtime_getObj h l) eqn:Hobj.
-            * discriminate.
-            * 
-              unfold wf_renv in Hrenv.
-              destruct Hrenv as [Hreceiver [Hreceiverval Hrenv]].
-              apply Forall_forall with (x := Iot l) in Hrenv.
-              -- rewrite Hobj in Hrenv. auto.
-              -- unfold runtime_getVal in Hgety. apply nth_error_In with (n := y). rewrite Hgety. reflexivity.
+            rewrite Hobj in Hgetbasetype.
+            discriminate.
           }
           remember (mkr_env (Iot l :: args')) as rΓ'.
-          destruct (method_body_lookup CT C m) eqn:Hlookupmbody.
+          destruct (method_body_lookup CT C m) as [mbody |] eqn:Hlookupmbody.
           2:{
             exfalso.
             (* AOSEN: Method lookup and dynamic dispatch *)
             (* specialize (Hresult y). *)
             admit.
+          }
+          destruct (method_def_lookup CT C m) as [mdef |] eqn:Hlookupmdef.
+          2:{
+            exfalso.
+            (* AOSEN: Method lookup and dynamic dispatch *)
+            (* specialize (Hresult y). *)
+            admit.
+          }
+          destruct (find_class CT C) as [cdef |] eqn:Hcdef. 
+          2: {
+            exfalso.            
+            unfold r_basetype in Hgetbasetype.
+            unfold wf_heap in Hheap. 
+            pose proof Hobj as Hobj_copy.
+            apply runtime_getObj_dom in Hobj.
+            specialize (Hheap l Hobj). unfold wf_obj in Hheap.
+            rewrite Hobj_copy in Hheap.
+            destruct Hheap as [Hwf_type _].
+            unfold wf_rtypeuse in Hwf_type.
+            rewrite Hobj_copy in Hgetbasetype. injection Hgetbasetype as Heq.
+            destruct (bound CT (rctype (rt_type o))) eqn:Hbound.
+            2: {
+              exact Hwf_type.
+            }
+            apply find_class_not_dom in Hcdef.
+            rewrite Heq in Hwf_type.
+            lia.
+          }
+
+          assert (HclassC : wf_class CT cdef).
+          {
+            apply Forall_forall with (x := cdef) in Hclass.
+            exact Hclass.
+            apply find_class_dom in Hcdef.
+            admit.
+          }
+
+          inversion HclassC as [ | CT' cdef' superC thisC Hsuper Hcname Hneq Hbody Hwf]; subst.
+          1:{
+            unfold method_def_lookup in Hlookupmdef.
+            admit. (* This is the object case, should be discharged by more work*)
           }
           exists rΓ h.
           left.
@@ -487,7 +537,7 @@ Proof.
           ++ reflexivity.
           ++ reflexivity.
           ++ exact Hlookup.
-          ++ exact HeqrΓ'.
+          ++ admit.
           ++ admit.
           ++ admit.
           ++ admit.
