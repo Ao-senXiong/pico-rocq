@@ -403,7 +403,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
     runtime_getVal rΓ y = Some (Iot ly) ->
     r_basetype h ly = Some cy ->
     method_body_lookup CT cy m = Some mbody ->
-    mstmt = mbody.(mbody_expr) ->
+    mstmt = mbody.(mbody_stmt) ->
     mret = mbody.(mreturn) ->
     runtime_lookup_list rΓ zs = Some vals ->
     (* rΓ' = mkr_env (Iot ly :: vals) rΓ.(init_state) -> *)
@@ -417,6 +417,18 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
   | SBS_Call_NPE: forall rΓ h x y m zs rΓ' h',
       runtime_getVal rΓ y = Some (Null_a) ->
       eval_stmt OK rΓ h (SCall x m y zs) NPE rΓ' h'
+
+  | SBS_Call_NPE_Body: forall CT rΓ h x y m zs vals ly cy mbody mstmt mret h' rΓ' rΓ'',
+    runtime_getVal rΓ y = Some (Iot ly) ->
+    r_basetype h ly = Some cy ->
+    method_body_lookup CT cy m = Some mbody ->
+    mstmt = mbody.(mbody_stmt) ->
+    mret = mbody.(mreturn) ->
+    runtime_lookup_list rΓ zs = Some vals ->
+    (* rΓ' = mkr_env (Iot ly :: vals) rΓ.(init_state) -> *)
+    rΓ' = mkr_env (Iot ly :: vals) ->
+    eval_stmt OK rΓ' h mstmt NPE rΓ'' h' ->
+    eval_stmt OK rΓ h (SCall x m y zs) NPE rΓ'' h'
 
   (* evaluate sequence of statements *)
   | SBS_Seq: forall rΓ h s1 s2 rΓ' h' rΓ'' h'',
