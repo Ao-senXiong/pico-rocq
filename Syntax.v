@@ -94,7 +94,7 @@ Record constructor_def := {
 }.
 
 Record method_body := {
-  mbody_expr: stmt; (* Method body expression *)
+  mbody_stmt: stmt; (* Method body expression *)
   mreturn: var; (* Return variable *)
 }.
 
