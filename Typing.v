@@ -190,6 +190,7 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
   | ST_VarAss : forall CT sΓ x e T T',
       wf_senv CT sΓ ->
       expr_has_type CT sΓ e T ->
+      x <> 0 -> (* x is not the receiver variable *)
       static_getType sΓ x = Some T' ->
       qualified_type_subtype CT T T' ->
       stmt_typing CT sΓ (SVarAss x e) sΓ
@@ -217,12 +218,16 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       stmt_typing CT sΓ (SNew x q C args) sΓ
 
   (* Method call *)
-  | ST_Call : forall CT sΓ x m y args argtypes Tx Ty m_sig,
+  | ST_Call : forall CT sΓ x m y args argtypes Tx Ty m_sig
+                    sΓ0 sΓ1 mbody,
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType sΓ y = Some Ty ->
       static_getType_list sΓ args = Some argtypes ->
       method_sig_lookup CT (sctype Ty) m = Some m_sig ->
+      method_body_lookup CT (sctype Ty) m = Some mbody ->
+      sΓ0 = Ty :: argtypes ->
+      stmt_typing CT sΓ0 mbody.(mbody_stmt) sΓ1 ->
       qualified_type_subtype CT (vpa_qualified_type (sqtype Ty) (mret m_sig)) Tx -> (* assignment subtype checking*)
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreciever m_sig)) -> (* receiver subtype checking *) 
       Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (sqtype Ty) T)) argtypes (mparams m_sig) -> (* argument subtype checking *)
@@ -342,7 +347,7 @@ Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
   | WFPlainMethod: forall CT C mdef mbody sΓ sΓ' mbodyrettype,
   find_overriding_method CT C (msignature mdef) = None -> (* No overriding method *)
   let methodbody := mbody mdef in
-  let mbodystmt := mbody_expr methodbody in
+  let mbodystmt := mbody_stmt methodbody in
   stmt_typing CT sΓ mbodystmt sΓ' ->
   let mbodyretvar := mreturn methodbody in
   mbodyretvar < dom sΓ' -> (* Return variable is in the static environment after method body *)
@@ -360,7 +365,7 @@ Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
   forallb2 (fun C1 C2 => eq_class_name C1.(sctype) C2.(sctype)) (mparams thismsig) (mparams supermsig)
   && eq_class_name (sctype (mret thismsig)) (sctype (mret supermsig)) ->
   let methodbody := mbody mdef in
-  let mbodystmt := mbody_expr methodbody in
+  let mbodystmt := mbody_stmt methodbody in
   stmt_typing CT sΓ mbodystmt sΓ' ->
   let mbodyretvar := mreturn methodbody in
   mbodyretvar < dom sΓ' -> (* Return variable is in the static environment after method body *)

@@ -31,41 +31,203 @@ Proof.
     + (* wellformed class *) exact Hclass.
     + (* wellformed heap *) exact Hheap.
     + (* Length of runtime environment greater than 0 *)
-    admit.
+    simpl. rewrite length_app. simpl. lia.
     + (* The first element of runtime environment is not null *)
     admit.
     + (* wellformed runtime environment *)  
     unfold wf_renv in *.
     admit.
     + (* Length of static environment greater than 0 *)
-    admit.
+    simpl.
+    lia.
     + (* wellformed static environment *)
       unfold wf_senv in *.
-      admit.
-      (* constructor; [exact H0|exact H]. *)
+      constructor.
+      * exact H0.
+      * 
+        destruct Hsenv.
+        exact H3.
     + (* length equality *)
       simpl.
-      admit.
-      (* rewrite length_app. simpl. lia. *)
+      rewrite length_app.
+      simpl.
+      rewrite Hlen.
+      lia.
     + (* correspondence between static and runtime environments *)
-      admit.
-    (* + admit.
-    + admit.
-    + admit. *)
-        (* intros i Hi sqt Hnth.
-        destruct (Nat.eq_dec i (List.length sΓ + 1)).
-        * (* i = last index, new variable *)
-          subst i.
-          unfold runtime_getVal.
+      intros i Hi sqt Hnth.
+      destruct (Nat.eq_dec i (dom sΓ)) as [Heq | Hneq].
+      * (* Case: i = dom sΓ (new variable) *)
+        subst i.
+        simpl in Hnth.
+        assert (Hnew : nth_error (T :: sΓ) (dom sΓ) = Some T).
+        {
+          (* rewrite nth_error_cons_length.
+          reflexivity. *)
           admit.
-        * (* i < List.length sΓ, old variables *)
-          admit. *)
+        }
+        rewrite Hnew in Hnth.
+        injection Hnth as Heq_sqt.
+        subst sqt.
+        unfold runtime_getVal.
+        simpl.
+        rewrite nth_error_app2.
+        -- rewrite Hlen.
+           trivial.
+        -- rewrite Hlen.
+           assert (dom (vars rΓ) - dom (vars rΓ) = 0) by lia.
+            rewrite H2.
+            simpl.
+            trivial.
+      * (* Case: i < dom sΓ (existing variable) *)
+        assert (Hi_old : i < dom sΓ).
+        {
+          simpl in Hi.
+          lia.
+        }
+        assert (Hnth_old : nth_error sΓ i = Some sqt).
+        {
+          simpl in Hnth.
+          destruct i.
+          - (* Case: i = 0 *)
+            exfalso.
+            apply Hneq.
+            admit.
+          - (* Case: i = S n *)
+            simpl in Hnth.
+            (* exact Hnth. *)
+            admit.
+        }
+        specialize (Hcorr i Hi_old sqt Hnth_old).
+        unfold runtime_getVal in *.
+        simpl.
+        rewrite nth_error_app1.
+        -- rewrite <- Hlen. exact Hi_old.
+        --
+           destruct (nth_error (vars rΓ) i) as [v|] eqn:Hgetval.
+           ++ (* Case: nth_error (vars rΓ) i = Some v *)
+              destruct v as [|loc].
+              ** (* Case: v = Null_a *)
+                 trivial.
+              ** (* Case: v = Iot loc *)
+                 (* Need to show wf_r_typable for updated environment *)
+                 admit.
+           ++ (* Case: nth_error (vars rΓ) i = None *)
+              exfalso.
+              apply nth_error_None in Hgetval.
+              rewrite <- Hlen in Hgetval.
+              lia.
   - (* Case: stmt = VarAss *)
+    intros.
+    inversion H5; subst.
+    unfold wf_r_config in *.
+    destruct H4 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    repeat split.
+    + (* wellformed class *) exact Hclass.
+    + (* wellformed heap *) exact Hheap.
+    + (* Length of runtime environment greater than 0 *)
+      simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
+      rewrite update_length.
+      rewrite <- Hlen.
+      exact HsenvLength.
+    + (* The first element of runtime environment is not null *)
+      unfold wf_renv in Hrenv.
+      destruct Hrenv as [Hreceiver [Hreceiverval Hallvals]].
+      destruct Hreceiverval as [iot Hiot].
+      exists iot.
+      simpl.
+      destruct (Nat.eq_dec 0 x) as [Heq | Hneq].
+      * (* Case: x = 0 (updating receiver, disallowed in Java) *)
+        lia.
+      * (* Case: x ≠ 0 (not updating receiver) *)
+        destruct (vars rΓ) as [| v0 vs] eqn:Hvars.
+        -- (* Case: vars rΓ = [] *)
+           exfalso.
+           unfold gget in Hiot.
+           discriminate.
+        -- (* Case: vars rΓ = v0 :: vs *)
+           unfold gget in Hiot.
+           injection Hiot as Heq.
+           subst v0.
+           simpl.
+          admit.
+    + (* wellformed runtime environment *)
+      (* unfold wf_renv in *.
+      destruct Hrenv as [Hreceiver [Hreceiverval Hallvals]].
+      repeat split.
+      * (* receiver at index 0 *)
+        exact Hreceiver.
+      * (* receiver value wellformed *)
+        exact Hreceiverval.
+      * (* all values wellformed *)
+        apply Forall_forall.
+        intros v Hin.
+        apply Forall_forall with (x := v) in Hallvals; [exact Hallvals |].
+        Show that updating one variable doesn't affect wellformedness of other values *)
+        admit.
+    + simpl. admit.
+    + (* wellformed static environment *)
+      destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
+    + (* length equality *)
+      simpl.
+      rewrite update_length.
+      exact Hlen.
+    + (* correspondence between static and runtime environments *)
+      intros i Hi sqt Hnth.
+      destruct (Nat.eq_dec i x) as [Heq | Hneq].
+      * (* Case: i = x (updated variable) *)
+        subst i.
+        unfold runtime_getVal.
+        simpl.
+        (* rewrite update_nth_same; [| apply static_getType_dom in H1; lia].
+        (* Need to show v2 is well-typed with respect to T' *)
+        assert (Hsubtype: qualified_type_subtype CT T T') by exact H2.
+        assert (Hexpr_type: expr_has_type CT sΓ e T) by exact H0. *)
+        (* From expression evaluation and subtyping, v2 should be well-typed *)
+        admit.
+      * (* Case: i ≠ x (unchanged variable) *)
+        unfold runtime_getVal.
+        simpl.
+        (* rewrite update_nth_diff; [| exact Hneq].
+        (* Use original correspondence for unchanged variables *)
+        specialize (Hcorr i Hi sqt Hnth).
+        exact Hcorr. *)
     admit.
   - (* Case: stmt = FldWrite *)
-    admit.
+    intros.
+    inversion H7; subst.
+    unfold wf_r_config in *.
+    destruct H6 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    repeat split.
+    + (* wellformed class *) exact Hclass.
+    + (* wellformed heap *) admit.
+    + (* Length of runtime environment greater than 0 *)
+      simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
+      rewrite <- Hlen.
+      exact HsenvLength.
+    + admit.
+    + admit.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
+    + admit.
+    + exact Hlen.
+    + admit.
   - (* Case: stmt = New *)
-    admit.
+    intros.
+    inversion H7; subst.
+    unfold wf_r_config in *.
+    destruct H6 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    repeat split.
+    + (* wellformed class *) exact Hclass.
+    + (* wellformed heap *) admit.
+    + (* Length of runtime environment greater than 0 *)
+      simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
+      rewrite update_length. rewrite <- Hlen.
+      exact HsenvLength.
+    + admit.
+    + admit.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
+    + admit.
+    + rewrite update_length. rewrite <- Hlen. lia.
+    + admit.
   - (* Case: stmt = Call *)
     admit.
   - (* Case: stmt = Seq *)
@@ -84,11 +246,11 @@ Proof.
   intros. 
   generalize dependent h. generalize dependent rΓ.
   (* do induction, while give names to each introduced item. *)
-  induction H0 as [H0 | CT sΓ T x sΓ' H0 H1 H2 H3 
-  | CT sΓ x e T T' H0 H1 H2 H3 
+  induction H0 as [H0 | CT sΓ T x sΓ' H0 H1 H2 H3
+  | CT sΓ x e T T' H0 H1 H2 H3
   | CT sΓ x f y Tx Ty fieldT H0 H1 H2 H3 H4 H5
-  | CT sΓ x Tx q C args argtypes n1 consig H0 H1 H2 H3 H4 H5 H6 
-  | CT sΓ x m y args argtypes Tx Ty m_sig  H0 H1 H2 H3 H4 H5 H6 H7  
+  | CT sΓ x Tx q C args argtypes n1 consig H0 H1 H2 H3 H4 H5 H6
+  | CT sΓ x m y args argtypes Tx Ty m_sig H0 H1 H2 H3 H4 H5 H6 H7 H8 H9 H10 H11 H12 H13
   | CT sΓ s1 sΓ' s2 sΓ'' H0_ IHstmt_typing1 H0_0 IHstmt_typing2 ]; intros.
   - (* Case: stmt = Skip *)
     exists rΓ, h.
@@ -111,22 +273,22 @@ Proof.
     (* Evaluate e first *)
     destruct e.
     + (* Case: e = ENull *)
-      exists (rΓ <| vars := update x Null_a rΓ.(vars)|>), h. 
-      destruct H as [ _ [ _ [ _ [ _ [_ Hresult]]]]].
-      unfold static_getType in H2.
+      exists (rΓ <| vars := update x Null_a rΓ.(vars)|>), h.
+      destruct H4 as [ _ [ _ [ _ [ _ [Hlen Hresult]]]]].
+      unfold static_getType in H3.
       destruct (runtime_getVal rΓ x) eqn:Hgetval.
       * 
         left. eapply SBS_Assign; [ exact Hgetval | constructor ].
       * 
         exfalso.
-        assert (x < dom sΓ) by (apply nth_error_Some; eauto).
-        specialize (Hresult x H T' H2).
+        assert (HxDom : x < dom sΓ) by (apply nth_error_Some; eauto).
+        specialize (Hresult x HxDom T' H3).
         rewrite Hgetval in Hresult. exact Hresult.
     + (* Case: e = EVar *)     
-      destruct H as [ _ [ _ [ _ [ _ [Henvmatch Hresult]]]]].
-      unfold static_getType in H2.
-      assert (Hx : x < dom sΓ) by (apply nth_error_Some; eauto).
-      specialize (Hresult x Hx T' H2).
+      destruct H4 as [ _ [ _ [ _ [ _ [Henvmatch Hresult]]]]].
+      unfold static_getType in H3.
+      assert (HxDom : x < dom sΓ) by (apply nth_error_Some; eauto).
+      specialize (Hresult x HxDom T' H3).
       destruct (runtime_getVal rΓ v) eqn:Hgetval.
       * 
         exists (rΓ <| vars := update x v0 rΓ.(vars) |>), h.
@@ -145,11 +307,11 @@ Proof.
         apply nth_error_None in Hgetval.
         lia.
     + (* Case: e = EField *)
-      destruct H as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
-      unfold static_getType in H2.
-      assert (Hx : x < dom sΓ) by (apply nth_error_Some; eauto).
+      destruct H4 as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+      unfold static_getType in H3.
+      assert (HxDom : x < dom sΓ) by (apply nth_error_Some; eauto).
       pose proof Hresult as Hresult_copy.
-      specialize (Hresult_copy x Hx T' H2).
+      specialize (Hresult_copy x HxDom T' H3).
       inversion H1 as [| | ? ? ? ? ? ? Hobj Hfield ]; subst.
       assert (Hv : nth_error sΓ v = Some T0) by (apply Hfield; auto).
       assert (Hv' : v < dom sΓ) by (apply nth_error_Some; auto).
@@ -202,18 +364,18 @@ Proof.
               destruct Hwf_o' as [_ Hdom_eq].
               apply getVal_not_dom in Hgetfield.
               rewrite Hdom_eq in Hgetfield.
-              unfold sf_def in H.
-              unfold fields in H.
+              unfold sf_def in H4.
+              unfold fields in H4.
               specialize (Hresult v Hv' T0 Hv).
               rewrite Hgety in Hresult.
               apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [| exact Hgetval | reflexivity ].
-              unfold gget in H.
+              unfold gget in H4.
               assert (v0 < dom (collect_fields CT (sctype T0))) by (apply nth_error_Some; congruence).
               specialize (collect_fields_monotone CT (rctype (rt_type o)) (sctype T0) Hresult).
               remember (dom (collect_fields CT (rctype (rt_type o)))) as d1.
               remember (dom (collect_fields CT (sctype T0))) as d2.
               assert (d2 <= d1) by (subst; apply collect_fields_monotone; assumption).
-              assert (v0 < d2) by (subst; apply H4).
+              assert (v0 < d2) by (subst; apply H5).
               assert (v0 >= d1) by (subst; apply Hgetfield).
               lia. (* subtyping polymorphism*)
           ++ (* can not find object by address l *)
@@ -442,7 +604,7 @@ Proof.
       lia.
   - (* Case: stmt = call *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
-    destruct H as [ Hclass [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+    destruct H14 as [ Hclass [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
     + (* can find x in runtime env*)
       destruct (runtime_getVal rΓ y) eqn:Hgety.
       * (* can find y in runtime env *)
@@ -523,34 +685,77 @@ Proof.
             admit.
           }
 
-          inversion HclassC as [ | CT' cdef' superC thisC Hsuper Hcname Hneq Hbody Hwf]; subst.
+          inversion HclassC as [ | CT' cdef' superC thisC Hsuper Hcname Hneq Hsig Hbody]; subst.
           1:{
             unfold method_def_lookup in Hlookupmdef.
             admit. (* This is the object case, should be discharged by more work*)
           }
-          exists rΓ h.
-          left.
-          eapply SBS_Call.
-          ++ exact Hgety.
-          ++ exact Hgetbasetype.
-          ++ exact Hlookupmbody.
-          ++ reflexivity.
-          ++ reflexivity.
-          ++ exact Hlookup.
-          ++ admit.
-          ++ admit.
-          ++ admit.
-          ++ admit.
+          remember (mkr_env (Iot l :: args')) as rΓ'.
+          destruct H14 as [Hwf_cons [Hwf_mets Hbound]].
+          assert (C = C0).
+          {
+            admit. (* They are the same because of class lookup*)
+          }
+          replace C0 with C in Hwf_mets.
+          assert (wf_method CT C mdef) as Hwf_m.
+          {
+            admit. 
+          }
+          remember (Ty :: argtypes) as sΓ'.
+          assert (wf_r_config CT sΓ' rΓ' h) as Hwf_rconfig_mbody.
+          {
+            admit.
+          }
+          specialize (H11 rΓ' h Hwf_rconfig_mbody).
+          destruct H11 as [rΓ'' [h' [Heval | Hnpe]]].
+          {
+            exists rΓ'' h'.
+            left.
+            eapply SBS_Call.
+            ++ exact Hgety.
+            ++ exact Hgetbasetype.
+            ++ exact Hlookupmbody.
+            ++ reflexivity.
+            ++ reflexivity.
+            ++ exact Hlookup.
+            ++ exact HeqrΓ'.
+            ++ assert (mbody = H2). 
+              {
+                admit. (* This is wrong *)
+              }
+              replace H2 with mbody in Heval.
+              exact Heval.
+            ++ admit.
+            ++ admit.
+          }
+          {
+            exists rΓ'' h'.
+            right.
+            eapply SBS_Call_NPE_Body.
+            ++ exact Hgety.
+            ++ exact Hgetbasetype.
+            ++ exact Hlookupmbody.
+            ++ reflexivity.
+            ++ reflexivity.
+            ++ exact Hlookup.
+            ++ exact HeqrΓ'.
+            ++ assert (mbody = H2). 
+              {
+                admit. (* This is wrong *)
+              }
+              replace H2 with mbody in Hnpe.
+              exact Hnpe.
+          }
       * (* can not find y in runtime env *)
         exfalso.
         apply runtime_getVal_not_dom in Hgety.
-        apply static_getType_dom in H2.
+        apply static_getType_dom in H5.
         lia.
     + (* can not find x in runtime env*)
       exfalso.
       apply runtime_getVal_not_dom in Hgetx.
-      apply static_getType_dom in H1.
-      destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+      apply static_getType_dom in H4.
+      destruct H14 as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
       lia.
   - (* Case: stmt = seq *)
     intros. specialize (IHstmt_typing1 rΓ h).  apply IHstmt_typing1 in H as Ind1.
