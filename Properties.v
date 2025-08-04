@@ -49,38 +49,30 @@ Proof.
         exact Hiot.
     + (* wellformed runtime environment *)  
     unfold wf_renv in *.
-    admit.
-    + (* Length of static environment greater than 0 *)
     simpl.
-    lia.
+    apply Forall_app.
+    split.
+    * destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]]. exact Hallvals.
+    * constructor.
+      -- trivial.
+      -- constructor.  
+    + (* Length of static environment greater than 0 *)
+    destruct Hsenv as [HsenvLength HsenvWellTyped]. rewrite length_app.
+    simpl. lia.
     + (* wellformed static environment *)
-      unfold wf_senv in *.
-      constructor.
-      * exact H0.
-      * 
-        destruct Hsenv.
-        exact H3.
+      unfold wf_senv in *. apply Forall_app. split.
+      * destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
+      * destruct H as [_ HTWellTyped]. 
+        constructor.
+        -- exact H0. (* assuming H is the wellformedness of T *)
+        -- constructor. (* empty tail is well-typed *)
     + (* length equality *)
-      simpl.
-      rewrite length_app.
-      simpl.
-      rewrite Hlen.
-      lia.
+      simpl. rewrite length_app. simpl. rewrite Hlen. rewrite length_app. simpl. lia.
     + (* correspondence between static and runtime environments *)
       intros i Hi sqt Hnth.
       destruct (Nat.eq_dec i (dom sΓ)) as [Heq | Hneq].
       * (* Case: i = dom sΓ (new variable) *)
         subst i.
-        simpl in Hnth.
-        assert (Hnew : nth_error (T :: sΓ) (dom sΓ) = Some T).
-        {
-          (* rewrite nth_error_cons_length.
-          reflexivity. *)
-          admit.
-        }
-        rewrite Hnew in Hnth.
-        injection Hnth as Heq_sqt.
-        subst sqt.
         unfold runtime_getVal.
         simpl.
         rewrite nth_error_app2.
@@ -94,21 +86,14 @@ Proof.
       * (* Case: i < dom sΓ (existing variable) *)
         assert (Hi_old : i < dom sΓ).
         {
-          simpl in Hi.
+          simpl in Hi. rewrite length_app in Hi. simpl in Hi.
           lia.
         }
         assert (Hnth_old : nth_error sΓ i = Some sqt).
         {
-          simpl in Hnth.
-          destruct i.
-          - (* Case: i = 0 *)
-            exfalso.
-            apply Hneq.
-            admit.
-          - (* Case: i = S n *)
-            simpl in Hnth.
-            (* exact Hnth. *)
-            admit.
+          have Happ := nth_error_app1 sΓ [T] Hi_old.
+          rewrite Happ in Hnth.
+          exact Hnth.
         }
         specialize (Hcorr i Hi_old sqt Hnth_old).
         unfold runtime_getVal in *.
@@ -119,11 +104,8 @@ Proof.
            destruct (nth_error (vars rΓ) i) as [v|] eqn:Hgetval.
            ++ (* Case: nth_error (vars rΓ) i = Some v *)
               destruct v as [|loc].
-              ** (* Case: v = Null_a *)
-                 trivial.
-              ** (* Case: v = Iot loc *)
-                 (* Need to show wf_r_typable for updated environment *)
-                 admit.
+              ** trivial.
+              ** admit.
            ++ (* Case: nth_error (vars rΓ) i = None *)
               exfalso.
               apply nth_error_None in Hgetval.
@@ -174,7 +156,7 @@ Proof.
         apply Forall_forall with (x := v) in Hallvals; [exact Hallvals |].
         Show that updating one variable doesn't affect wellformedness of other values *)
         admit.
-    + simpl. admit.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength. 
     + (* wellformed static environment *)
       destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
     + (* length equality *)
@@ -291,7 +273,7 @@ Proof.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
     + admit.
     + rewrite update_length. exact Hlen.
-    + admit.  
+    + admit.
   - (* Case: stmt = Seq *)
     intros. inversion H1; subst.
     specialize (IHstmt_typing1 rΓ'0 h'0 rΓ h H H3) as IH1.
@@ -838,6 +820,30 @@ Admitted.
 
 (* ------------------------------------------------------------- *)
 (* Immutability properties for PICO *)
+(* Fixpoint deeply_immutable (h : heap) (l : Loc) (CT: class_table) : Prop :=
+  match l with
+  | Iot loc =>
+    match runtime_getObj h loc with
+    | Some obj =>
+      match obj.(rt_type) with
+      | Imm =>
+        match fields CT obj.(rt_type).(rctype) with
+        | Some field_types =>
+            (* Zip field types with actual field values *)
+            let zipped := combine field_types obj.(rt_fields) in
+            (* For each field: if its type is Imm, recurse; otherwise skip *)
+            forallb (fun '(fld_ty, l_f) =>
+              match qualified_type_mut (snd fld_ty) with
+              | Imm => deeply_immutable h l_f CT
+              | _ => True
+              end) zipped = true
+        | None => False (* unknown class — malformed CT *)
+        end
+      | _ => False
+      end
+    | None => False
+    end
+  end. *)
 (* Inductive reachability : heap -> Loc -> Loc -> Prop :=
 
 (* we can access the current location *)

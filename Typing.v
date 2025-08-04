@@ -182,7 +182,7 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       wf_senv CT sΓ ->
       wf_stypeuse CT (sqtype T) (sctype T) ->
       static_getType sΓ x = None ->
-      sΓ' = (T :: sΓ) ->
+      sΓ' = (sΓ ++ [T]) ->
       (* The local variable is added to the static environment *)
       stmt_typing CT sΓ (SLocal T x) sΓ'
 
