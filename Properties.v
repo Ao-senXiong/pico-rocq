@@ -33,7 +33,20 @@ Proof.
     + (* Length of runtime environment greater than 0 *)
     simpl. rewrite length_app. simpl. lia.
     + (* The first element of runtime environment is not null *)
-    admit.
+      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+      destruct Hreceiverval as [iot Hiot].
+      exists iot.
+      simpl.
+      unfold gget in *.
+      destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+      * (* Case: vars rΓ = [] *)
+        exfalso.
+        (* rewrite Hvars in HrEnvLen. *)
+        simpl in HrEnvLen.
+        lia.
+      * (* Case: vars rΓ = v0 :: vs *)
+        simpl.
+        exact Hiot.
     + (* wellformed runtime environment *)  
     unfold wf_renv in *.
     admit.
@@ -130,26 +143,23 @@ Proof.
       rewrite <- Hlen.
       exact HsenvLength.
     + (* The first element of runtime environment is not null *)
-      unfold wf_renv in Hrenv.
-      destruct Hrenv as [Hreceiver [Hreceiverval Hallvals]].
+      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
       destruct Hreceiverval as [iot Hiot].
       exists iot.
       simpl.
-      destruct (Nat.eq_dec 0 x) as [Heq | Hneq].
-      * (* Case: x = 0 (updating receiver, disallowed in Java) *)
+      unfold gget in *.
+      destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+      * (* Case: vars rΓ = [] *)
+        exfalso.
+        (* rewrite Hvars in HrEnvLen. *)
+        simpl in HrEnvLen.
         lia.
-      * (* Case: x ≠ 0 (not updating receiver) *)
-        destruct (vars rΓ) as [| v0 vs] eqn:Hvars.
-        -- (* Case: vars rΓ = [] *)
-           exfalso.
-           unfold gget in Hiot.
-           discriminate.
-        -- (* Case: vars rΓ = v0 :: vs *)
-           unfold gget in Hiot.
-           injection Hiot as Heq.
-           subst v0.
-           simpl.
-          admit.
+      * (* Case: vars rΓ = v0 :: vs *)
+        destruct x as [|x'].
+           -- (* x = 0 *) contradiction.
+           -- (* x = S x' *)
+              simpl. (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
+              exact Hiot.
     + (* wellformed runtime environment *)
       (* unfold wf_renv in *.
       destruct Hrenv as [Hreceiver [Hreceiverval Hallvals]].
@@ -204,7 +214,25 @@ Proof.
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
       rewrite <- Hlen.
       exact HsenvLength.
-    + admit.
+    +
+      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+      destruct Hreceiverval as [iot Hiot].
+      exists iot.
+      simpl.
+      unfold gget in *.
+      destruct (vars rΓ') as [|v0 vs] eqn:Hvars.
+      * (* Case: vars rΓ = [] *)
+        exfalso.
+        (* rewrite Hvars in HrEnvLen. *)
+        simpl in HrEnvLen.
+        lia.
+      * (* Case: vars rΓ = v0 :: vs *)
+        destruct x as [|x'].
+           (* -- x = 0 contradiction. *)
+           -- (* x = S x' *)
+              exact Hiot.
+           --    (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
+              exact Hiot.
     + admit.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
     + admit.
@@ -222,14 +250,48 @@ Proof.
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
       rewrite update_length. rewrite <- Hlen.
       exact HsenvLength.
-    + admit.
+    +
+      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+      destruct Hreceiverval as [iot Hiot].
+      exists iot.
+      simpl.
+      unfold gget in *.
+      destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+      * (* Case: vars rΓ = [] *)
+        exfalso.
+        (* rewrite Hvars in HrEnvLen. *)
+        simpl in HrEnvLen.
+        lia.
+      * (* Case: vars rΓ = v0 :: vs *)
+        destruct x as [|x'].
+           (* -- x = 0 contradiction. *)
+           -- (* x = S x' *)
+              admit.
+           --    (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
+              exact Hiot.
     + admit.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
     + admit.
     + rewrite update_length. rewrite <- Hlen. lia.
     + admit.
   - (* Case: stmt = Call *)
-    admit.
+    intros.
+    inversion H11; subst.
+    unfold wf_r_config in *.
+    destruct H10 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    repeat split.
+    + (* wellformed class *) exact Hclass.
+    + admit.
+    + (* Length of runtime environment greater than 0 *)
+      simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
+      rewrite update_length. rewrite <- Hlen.
+      exact HsenvLength.
+    + admit.
+    + admit.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
+    + admit.
+    + rewrite update_length. exact Hlen.
+    + admit.  
   - (* Case: stmt = Seq *)
     intros. inversion H1; subst.
     specialize (IHstmt_typing1 rΓ'0 h'0 rΓ h H H3) as IH1.
