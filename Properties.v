@@ -170,12 +170,28 @@ Proof.
         subst i.
         unfold runtime_getVal.
         simpl.
-        (* rewrite update_nth_same; [| apply static_getType_dom in H1; lia].
+        rewrite update_same.
         (* Need to show v2 is well-typed with respect to T' *)
-        assert (Hsubtype: qualified_type_subtype CT T T') by exact H2.
-        assert (Hexpr_type: expr_has_type CT sΓ e T) by exact H0. *)
-        (* From expression evaluation and subtyping, v2 should be well-typed *)
-        admit.
+        assert (Hsubtype: qualified_type_subtype CT T T') by exact H3.
+        assert (Hexpr_type: expr_has_type CT sΓ e T) by exact H0.
+        rewrite <- Hlen; exact Hi.
+        destruct v2 as [|loc].
+        -- (* Case: v2 = Null_a *)
+          trivial.
+        -- (* Case: v2 = Iot loc *)
+          (* Use subtyping to convert from T to sqt *)
+          assert (Hsubtype_preserved : wf_r_typable CT (rΓ <| vars := update x (Iot loc) (vars rΓ) |>) h' loc sqt).
+          {
+            admit.
+            (* Apply subtyping preservation *)
+            (* eapply wf_r_typable_subtype.
+            - (* Show that extending environment preserves well-typedness *)
+              eapply wf_r_typable_extend_env.
+              exact Hv2_type.
+            - (* Use the subtyping relation H3 *)
+              exact H3. *)
+          }
+          exact Hsubtype_preserved.
       * (* Case: i ≠ x (unchanged variable) *)
         unfold runtime_getVal.
         simpl.
@@ -217,7 +233,7 @@ Proof.
               exact Hiot.
     + admit.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
-    + admit.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
     + exact Hlen.
     + admit.
   - (* Case: stmt = New *)
@@ -820,30 +836,18 @@ Admitted.
 
 (* ------------------------------------------------------------- *)
 (* Immutability properties for PICO *)
-(* Fixpoint deeply_immutable (h : heap) (l : Loc) (CT: class_table) : Prop :=
-  match l with
-  | Iot loc =>
-    match runtime_getObj h loc with
-    | Some obj =>
-      match obj.(rt_type) with
-      | Imm =>
-        match fields CT obj.(rt_type).(rctype) with
-        | Some field_types =>
-            (* Zip field types with actual field values *)
-            let zipped := combine field_types obj.(rt_fields) in
-            (* For each field: if its type is Imm, recurse; otherwise skip *)
-            forallb (fun '(fld_ty, l_f) =>
-              match qualified_type_mut (snd fld_ty) with
-              | Imm => deeply_immutable h l_f CT
-              | _ => True
-              end) zipped = true
-        | None => False (* unknown class — malformed CT *)
-        end
-      | _ => False
-      end
-    | None => False
-    end
-  end. *)
+Notation "l [ i ]" := (nth_error l i) (at level 50).
+
+Theorem immutability_pico :
+  forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f,
+    l < dom h ->
+    runtime_getObj h l = Some (mkObj (mkruntime_type (exist _ Imm (or_intror eq_refl)) C) vals) ->
+    wf_r_config CT sΓ rΓ h ->
+    stmt_typing CT sΓ stmt sΓ' -> 
+    eval_stmt OK rΓ h stmt OK rΓ' h' -> 
+    runtime_getObj h l = Some (mkObj (mkruntime_type (exist _ Imm (or_intror eq_refl)) C) vals') ->
+    sf_assignability CT C f = Some Final ->
+    nth_error vals f = nth_error vals' f.
 (* Inductive reachability : heap -> Loc -> Loc -> Prop :=
 
 (* we can access the current location *)
