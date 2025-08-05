@@ -845,9 +845,25 @@ Theorem immutability_pico :
     wf_r_config CT sΓ rΓ h ->
     stmt_typing CT sΓ stmt sΓ' -> 
     eval_stmt OK rΓ h stmt OK rΓ' h' -> 
-    runtime_getObj h l = Some (mkObj (mkruntime_type (exist _ Imm (or_intror eq_refl)) C) vals') ->
-    sf_assignability CT C f = Some Final ->
+    runtime_getObj h' l = Some (mkObj (mkruntime_type (exist _ Imm (or_intror eq_refl)) C) vals') ->
+    sf_assignability CT C f = Some Final \/ sf_assignability CT C f = Some RDA ->
     nth_error vals f = nth_error vals' f.
+
+Theorem readonly_pico :
+    forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs lhs anymethod anyrq,
+      stmt = SFldWrite readonlyx anyf rhs \/ stmt =  SCall lhs anymethod readonlyx [] -> 
+      static_getType sΓ readonlyx = Some qt ->
+      (* This is the interesting part, I think I have to supply empty arguments or all arguments as immutable because otherwise I don't if the readonly receiver is aliased with some mutable part *)
+      wf_r_config CT sΓ rΓ h ->
+      stmt_typing CT sΓ stmt sΓ' -> 
+      eval_stmt OK rΓ h stmt OK rΓ' h' -> 
+      runtime_getVal rΓ readonlyx = Some (Iot l)  ->
+      runtime_getObj h l = Some (mkObj (mkruntime_type anyrq C) vals) ->
+      runtime_getObj h' l = Some (mkObj (mkruntime_type anyrq C) vals') ->
+      sf_assignability CT C f = Some Final \/ sf_assignability CT C f = Some RDA ->
+      nth_error vals f = nth_error vals' f.
+      (*This looks like shallow mutability to me, but my language does not allow x.f1.f2 = y.*)
+
 (* Inductive reachability : heap -> Loc -> Loc -> Prop :=
 
 (* we can access the current location *)
