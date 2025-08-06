@@ -4,6 +4,7 @@ Import ListNotations.
 Require Import String.
 From RecordUpdate Require Import RecordUpdate.
 Require Import Coq.Logic.Classical_Prop.
+Require Import NZOrder.
 
 (* ------------------------------------------------------------- *)
 (* Soundness properties for PICO *)
@@ -269,7 +270,7 @@ Proof.
               exact Hiot.
     + admit.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
-    + admit.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
     + rewrite update_length. rewrite <- Hlen. lia.
     + admit.
   - (* Case: stmt = Call *)
@@ -287,7 +288,7 @@ Proof.
     + admit.
     + admit.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
-    + admit.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
     + rewrite update_length. exact Hlen.
     + admit.
   - (* Case: stmt = Seq *)
