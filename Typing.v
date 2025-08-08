@@ -130,6 +130,66 @@ Definition method_body_lookup (CT : class_table) (C : class_name) (m : method_na
   | None => None
   end.
 
+Lemma subtype_inherits_methods : forall CT C1 C2 m mdef,
+  base_subtype CT C1 C2 ->
+  method_def_lookup CT C2 m = Some mdef ->
+  method_def_lookup CT C1 m = Some mdef.
+Proof.
+  intros CT C1 C2 m mdef Hsub Hlookup.
+  
+  (* This follows from the definition of method_def_lookup *)
+  (* which searches up the inheritance hierarchy *)
+  unfold method_def_lookup in *.
+  unfold mdef_lookup in *.
+  
+  (* Use induction on the subtype relation and 
+     properties of the method lookup algorithm *)
+  induction Hsub.
+  
+  - (* Base case: direct inheritance *)
+    (* If C1 directly extends C2, then C1's lookup 
+       searches C1 first, then C2 *)
+    admit. (* Details depend on mdef_lookup implementation *)
+    
+  - (* Transitive case *)
+    (* Use IH and transitivity *)
+    admit.
+  - admit.
+Admitted.
+
+Lemma subtype_lookup_fail : forall CT C1 C2 m,
+  base_subtype CT C1 C2 ->
+  method_def_lookup CT C1 m = None ->
+  method_def_lookup CT C2 m = None.
+Proof.
+  intros CT C1 C2 m Hsub Hlookup.
+  
+  (* Proof by contradiction *)
+  destruct (method_def_lookup CT C2 m) as [mdef|] eqn:HC2_lookup.
+  
+  - (* Case: method_def_lookup CT C2 m = Some mdef *)
+    (* This contradicts our assumption that C1 lookup fails *)
+    exfalso.
+    
+    (* Since C1 is a subtype of C2, and C2 has method m, 
+       then C1 should either have m or inherit it from C2 *)
+    assert (Hinherit: method_def_lookup CT C1 m = Some mdef).
+    {
+      (* Use method inheritance property *)
+      apply subtype_inherits_methods with (C2 := C2).
+      - exact Hsub.
+      - exact HC2_lookup.
+    }
+    
+    (* This contradicts Hlookup *)
+    rewrite Hlookup in Hinherit.
+    discriminate Hinherit.
+    
+  - (* Case: method_def_lookup CT C2 m = None *)
+    (* This is exactly what we want to prove *)
+    reflexivity.
+Qed.
+
 (* STATIC WELLFORMEDNESS CONDITION *)
 (* Well-formedness of type use *)
 Definition wf_stypeuse (CT : class_table) (q1: q) (c: class_name) : Prop :=

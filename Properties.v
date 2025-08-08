@@ -720,6 +720,13 @@ Proof.
           destruct (method_body_lookup CT C m) as [mbody |] eqn:Hlookupmbody.
           2:{
             exfalso.
+            specialize (Hresult y). rewrite -> Henvmatch in Hresult.
+            apply runtime_getVal_dom in Hgety as Hgety_dom.
+            specialize (Hresult Hgety_dom).
+            specialize (Hresult Ty H5).
+            rewrite Hgety in Hresult.
+            apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [| exact Hobj | reflexivity ].
+            (* apply subtype_lookup_fail with (CT := CT) (C1 := rctype (rt_type o)) (C2 := sctype Ty) (m := m) in Hlookupmbody. *)
             (* AOSEN: Method lookup and dynamic dispatch *)
             (* specialize (Hresult y). *)
             admit.
@@ -779,7 +786,7 @@ Proof.
           remember (Ty :: argtypes) as sΓ'.
           assert (wf_r_config CT sΓ' rΓ' h) as Hwf_rconfig_mbody.
           {
-            admit.
+            admit. (* This is something need to be proved, in Dafny, it is more modular *)
           }
           specialize (H11 rΓ' h Hwf_rconfig_mbody).
           destruct H11 as [rΓ'' [h' [Heval | Hnpe]]].
@@ -863,6 +870,8 @@ Theorem immutability_pico :
     runtime_getObj h' l = Some (mkObj (mkruntime_type (exist _ Imm (or_intror eq_refl)) C) vals') ->
     sf_assignability CT C f = Some Final \/ sf_assignability CT C f = Some RDA ->
     nth_error vals f = nth_error vals' f.
+Proof.
+Admitted.
 
 Theorem readonly_pico :
     forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs lhs anymethod anyrq,
@@ -878,6 +887,8 @@ Theorem readonly_pico :
       sf_assignability CT C f = Some Final \/ sf_assignability CT C f = Some RDA ->
       nth_error vals f = nth_error vals' f.
       (*This looks like shallow mutability to me, but my language does not allow x.f1.f2 = y.*)
+Proof.
+Admitted.
 
 (* Inductive reachability : heap -> Loc -> Loc -> Prop :=
 
