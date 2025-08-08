@@ -32,6 +32,43 @@ Definition static_getType_list (sΓ: s_env): list Loc -> option (list qualified_
 Definition runtime_lookup_list (rΓ: r_env): list Loc -> option (list value) :=
   fun l => mapM (fun x => runtime_getVal rΓ x) l.
 
+Lemma mapM_Some_forall :
+  forall {A B} (f : A -> option B) xs ys,
+    mapM f xs = Some ys ->
+    Forall (fun x => exists y, f x = Some y) xs.
+Proof.
+  intros A B f xs.
+  induction xs as [|x xs IH]; intros ys Hmap.
+  - simpl in Hmap. inversion Hmap; subst. constructor.
+  - simpl in Hmap.
+    destruct (f x) eqn:Hfx; try discriminate.
+    destruct (mapM f xs) eqn:Hxsm; try discriminate.
+    inversion Hmap; subst.
+    constructor.
+    + eauto.  (* from Hfx *)
+    + eapply IH; eauto.
+Qed.
+
+Lemma mapM_None_exists :
+  forall {A B} (f : A -> option B) xs,
+    mapM f xs = None ->
+    exists x, List.In x xs /\ f x = None.
+Proof.
+  intros A B f xs.
+  (* Generalize the hypothesis before induction *)
+  revert f.
+  induction xs as [|x xs IH]; intros f Hmap; simpl in Hmap.
+  - discriminate.
+  - destruct (f x) eqn:Hfx.
+    + destruct (mapM f xs) eqn:Hmxs.
+      * discriminate.
+      * (* failure in tail *)
+        destruct (IH f Hmxs) as [x' [Hin Hnone]].
+        exists x'. split; [right; exact Hin | exact Hnone].
+    + (* failure at head *)
+      exists x. split; [left; reflexivity | exact Hfx].
+Qed.
+
 (* ------------------------------------------------------------------------ *)
 (** ** Local hints *)
 Local Hint Unfold runtime_getObj runtime_getVal static_getType: updates.

@@ -678,7 +678,21 @@ Proof.
         -- (* Case: v0 = Iot loc *)
           destruct (runtime_lookup_list rΓ args) as [args' |] eqn:Hlookup.
           2:{
-            admit.
+            unfold runtime_lookup_list in Hlookup. unfold static_getType_list in H6.
+            exfalso.
+            apply mapM_Some_forall in H6.
+            apply mapM_None_exists in Hlookup.
+            destruct Hlookup as [testx [Hinargs Hnone]].
+            assert (Htestx_exists: exists y : qualified_type, static_getType sΓ testx = Some y).
+            {
+              apply Forall_forall with (x := testx) in H6.
+              - exact H6.
+              - exact Hinargs.
+            }
+            destruct Htestx_exists as [testy Hsome].
+            apply static_getType_dom in Hsome.
+            apply runtime_getVal_not_dom in Hnone.
+            lia.
           }
           destruct (runtime_getObj h l) eqn:Hobj.
           2:{
