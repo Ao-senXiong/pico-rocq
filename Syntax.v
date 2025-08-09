@@ -51,7 +51,7 @@ Definition s_env := list qualified_type.
 Inductive expr : Type :=
   | ENull : expr
   | EVar : var -> expr
-  | EField : var -> var -> expr. (* x.f TODO should we change that to e.f? *)
+  | EField : var -> var -> expr.
 
 Inductive stmt: Type :=
   | SSkip: stmt (* skip *)
@@ -59,9 +59,8 @@ Inductive stmt: Type :=
   | SVarAss: var -> expr -> stmt (* x = e *)
   | SFldWrite: var -> var -> var -> stmt (* x.f = y *)
   | SNew: var -> q_c -> class_name -> list var -> stmt (* x = new q_c C(y1, ..., yn) *)
-  | SCall: var -> method_name -> var -> list var -> stmt (* x = y.m(z1, ..., zn) *)
+  | SCall: var -> var -> method_name -> list var -> stmt (* x = y.m(z1, ..., zn) *)
   (* | SCast: var -> q -> class_name -> var -> stmt x = (q C) y  *)
-  (* | SUpcast: var -> q_c -> class_name -> var -> stmt x = (T) y  *)
   | SSeq: stmt -> stmt -> stmt. (* s1; s2 *)
 
 Record field_type := {
@@ -83,14 +82,13 @@ Record constructor_body :={
 
 Record constructor_sig := {
   cqualifier: q_c; (* Mutable, Immutable, or RDM *)
-  ctor_type : class_name; (* Class name *)
-  sparams : list qualified_type; (* T x1, ..., T xn Parameters for super call *)
-  cparams : list qualified_type; (* T y1, ..., T yn Parameters for field assignment *)
+  sparams : list qualified_type; (* T x1, ..., T xn Parameters for super call *) (*s -> super*)
+  cparams : list qualified_type; (* T y1, ..., T yn Parameters for field assignment *) (*c -> current*)
 }.
 
 Record constructor_def := {
   csignature : constructor_sig; (* Constructor signature *)
-  cbody : constructor_body;
+  cbody : constructor_body; (* Constructor body *)
 }.
 
 Record method_body := {
@@ -101,7 +99,7 @@ Record method_body := {
 Record method_sig := {
   mret : qualified_type; (* Return type *)
   mname : method_name; (* Method name *)
-  mreciever: qualified_type; (*T this*)
+  mreceiver: qualified_type; (*T this*)
   mparams : list qualified_type; (* T x1, ..., T xn *)
 }.
 
@@ -189,8 +187,6 @@ Record Obj := mkObj {
 }.
 
 Definition heap          := list Obj.
-Definition LocSet        := Ensemble Loc.
-
 
 (* AOSEN: just a test *)
 (* Instance settable_r_env : Settable _ :=

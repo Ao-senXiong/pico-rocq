@@ -5,20 +5,6 @@ Import ListNotations.
 
 (* STATIC HELPER FUNCTIONS *)
 
-(* Class bound look up in the class table  *)
-Definition bound (CT : class_table) (C : class_name) : option q_c :=
-  match find_class CT C with
-  | Some decl => Some (class_qualifier (signature decl))
-  | None => None
-  end.
-
-(* Parent class lookup in the class table *)
-Definition parent (CT : class_table) (C : class_name) : option class_name :=
-  match find_class CT C with
-  | Some def => super (signature def)
-  | None => None
-  end.
-
 (* Collect fields of a class and its superclasses, with fuel to prevent infinite loops *)
 Fixpoint collect_fields_fuel (fuel : nat) (CT : class_table) (C : class_name) : list field_def :=
   match fuel with
@@ -130,10 +116,10 @@ Definition method_body_lookup (CT : class_table) (C : class_name) (m : method_na
   | None => None
   end.
 
-Lemma subtype_inherits_methods : forall CT C1 C2 m mdef,
+Lemma subtype_inherits_methods : forall CT C1 C2 m mdef1 mdef2,
   base_subtype CT C1 C2 ->
-  method_def_lookup CT C2 m = Some mdef ->
-  method_def_lookup CT C1 m = Some mdef.
+  method_def_lookup CT C2 m = Some mdef2 ->
+  method_def_lookup CT C1 m = Some mdef1.
 Proof.
   intros CT C1 C2 m mdef Hsub Hlookup.
   
@@ -150,11 +136,6 @@ Proof.
     (* If C1 directly extends C2, then C1's lookup 
        searches C1 first, then C2 *)
     admit. (* Details depend on mdef_lookup implementation *)
-    
-  - (* Transitive case *)
-    (* Use IH and transitivity *)
-    admit.
-  - admit.
 Admitted.
 
 Lemma subtype_lookup_fail : forall CT C1 C2 m,
@@ -176,7 +157,7 @@ Proof.
     assert (Hinherit: method_def_lookup CT C1 m = Some mdef).
     {
       (* Use method inheritance property *)
-      apply subtype_inherits_methods with (C2 := C2).
+      apply subtype_inherits_methods with (C2 := C2) (mdef1 := mdef) (mdef2 := mdef).
       - exact Hsub.
       - exact HC2_lookup.
     }
@@ -199,6 +180,13 @@ Definition wf_stypeuse (CT : class_table) (q1: q) (c: class_name) : Prop :=
   | None => False (* or False, depending on your semantics *)
   end.
 
+Definition wf_s_typeuse (CT : class_table) (t : qualified_type) : Prop :=
+  match bound CT t.(sctype) with
+  | Some q_c => q_subtype (vpa_mutabilty t.(sqtype) (q_c_proj (q_c))) t.(sqtype) /\ 
+                   t.(sctype) < dom CT
+  | None => False
+  end.
+
 (* Well-formedness of field *)
 Definition wf_field (CT : class_table) (f: field_def) : Prop :=
   wf_stypeuse CT (q_f_proj (mutability (ftype f))) (f_base_type (ftype f)).
@@ -213,9 +201,10 @@ Definition wf_senv (CT : class_table) (sΓ : s_env) : Prop :=
 Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop :=
 
   (* Null typing *)
-  | ET_Null : forall CT Γ T Object_name,
+  | ET_Null : forall CT Γ q class_name,
+      q = Rd -> (* did not define the bottom type of Java base type *)
       wf_senv CT Γ ->
-      expr_has_type CT Γ ENull (Build_qualified_type T Object_name)
+      expr_has_type CT Γ ENull (Build_qualified_type q class_name)
 
   (* Variable typing *)
   | ET_Var : forall CT Γ x T,
@@ -224,11 +213,11 @@ Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop
       expr_has_type CT Γ (EVar x) T
       
   (* Field access typing *)    
-  | ET_Field : forall CT Γ x T fT f,
+  | ET_Field : forall CT Γ x T fDef f,
       wf_senv CT Γ ->
       static_getType Γ x = Some T ->
-      sf_def CT (sctype T) f = Some fT ->
-      expr_has_type CT Γ (EField x f) (Build_qualified_type (q_f_proj (mutability (ftype fT))) (f_base_type (ftype fT)))
+      sf_def CT (sctype T) f = Some fDef ->
+      expr_has_type CT Γ (EField x f) (vpa_type_to_type T (Build_qualified_type (q_f_proj (mutability (ftype fDef))) (f_base_type (ftype fDef))))
 .
 
 Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
@@ -247,12 +236,12 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       stmt_typing CT sΓ (SLocal T x) sΓ'
 
   (* Variable assignment *)
-  | ST_VarAss : forall CT sΓ x e T T',
+  | ST_VarAss : forall CT sΓ x e Te Tx,
       wf_senv CT sΓ ->
-      expr_has_type CT sΓ e T ->
+      expr_has_type CT sΓ e Te ->
       x <> 0 -> (* x is not the receiver variable *)
-      static_getType sΓ x = Some T' ->
-      qualified_type_subtype CT T T' ->
+      static_getType sΓ x = Some Tx -> (* rename the varaibles to be more clear*)
+      qualified_type_subtype CT Te Tx ->
       stmt_typing CT sΓ (SVarAss x e) sΓ
 
   (* Field write *)
@@ -262,6 +251,7 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       static_getType sΓ y = Some Ty ->
       sf_def CT (sctype Tx) f = Some fieldT ->
       sf_assignability CT (sctype Tx) f = Some a ->
+      (* TODO: define a helper method to get the adapated type *)
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Tx) (Build_qualified_type (q_f_proj (mutability (ftype fieldT))) (f_base_type (ftype fieldT)))) ->
       vpa_assignability (sqtype Tx) a = Assignable ->
       stmt_typing CT sΓ (SFldWrite x f y) sΓ
@@ -275,21 +265,22 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       length consig.(sparams) = n1 ->
       Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj q) T)) (firstn n1 argtypes) consig.(sparams) ->
       Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj q) T)) (skipn n1 argtypes) consig.(cparams) ->
+      (* Object creation check is missing; rhs to lhs assignment check is missing; which properties need to be strength *)
       stmt_typing CT sΓ (SNew x q C args) sΓ
 
   (* Method call *)
-  | ST_Call : forall CT sΓ x m y args argtypes Tx Ty m_sig
-                    sΓ0 sΓ1 mbody,
+  | ST_Call : forall CT sΓ x m y args argtypes Tx Ty m_sig,
+                    (* sΓ0 sΓ1 mbody *)
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType sΓ y = Some Ty ->
       static_getType_list sΓ args = Some argtypes ->
       method_sig_lookup CT (sctype Ty) m = Some m_sig ->
-      method_body_lookup CT (sctype Ty) m = Some mbody ->
-      sΓ0 = Ty :: argtypes ->
-      stmt_typing CT sΓ0 mbody.(mbody_stmt) sΓ1 ->
+      (* method_body_lookup CT (sctype Ty) m = Some mbody -> *)
+      (* sΓ0 = Ty :: argtypes -> *)
+      (* stmt_typing CT sΓ0 mbody.(mbody_stmt) sΓ1 -> *)
       qualified_type_subtype CT (vpa_qualified_type (sqtype Ty) (mret m_sig)) Tx -> (* assignment subtype checking*)
-      qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreciever m_sig)) -> (* receiver subtype checking *) 
+      qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreceiver m_sig)) -> (* receiver subtype checking *) 
       Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (sqtype Ty) T)) argtypes (mparams m_sig) -> (* argument subtype checking *)
       stmt_typing CT sΓ (SCall x m y args) sΓ
 
@@ -350,9 +341,9 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
     constructor_def_lookup CT C = Some ctor ->
     let sig := csignature ctor in
     let q_c := cqualifier sig in
-    let ccon := ctor_type sig in
+    (* let ccon := ctor_type sig in *)
     (* constructor mutability qualifier is same as bound; Constructor name is the same as class name *)
-    Some q_c = bound CT C /\ ccon = C -> 
+    Some q_c = bound CT C -> 
     (* Parameter types are wellformed *)
     Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (sparams sig) ->
     Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (cparams sig) ->
@@ -435,12 +426,12 @@ Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
   let super_method_parameters := mparams supermsig in
   length this_method_parameters = length super_method_parameters -> (* Same number of parameters *)
   (* Check parameter type contravariant *)
-  Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreciever thismsig)) T1) (vpa_qualified_type (sqtype (mreciever thismsig)) T2)) super_method_parameters this_method_parameters ->
+  Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) T1) (vpa_qualified_type (sqtype (mreceiver thismsig)) T2)) super_method_parameters this_method_parameters ->
   (* Check reciever type contravariant *)
-  qualified_type_subtype CT (vpa_qualified_type (sqtype (mreciever thismsig)) (mreciever supermsig)) (mreciever thismsig) ->
+  qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) (mreceiver supermsig)) (mreceiver thismsig) ->
   let super_method_return := mret supermsig in
   (* Check return type covariant *)
-  qualified_type_subtype CT (vpa_qualified_type (sqtype (mreciever thismsig)) this_method_return) (vpa_qualified_type (sqtype (mreciever thismsig)) super_method_return) ->
+  qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) this_method_return) (vpa_qualified_type (sqtype (mreceiver thismsig)) super_method_return) ->
   wf_method CT C mdef
 .
 
@@ -461,7 +452,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
 | WFOtherDef: forall CT cdef superC thisC, 
   cdef.(signature).(super) = Some superC -> (* Not Object class *)
   cdef.(signature).(cname) = thisC ->
-  thisC <> superC -> (* no self inheritance *)
+  thisC > superC -> (* index of current class must be greater than super class *)
   let sig := cdef.(signature) in
   let bod := cdef.(body) in
   let C := cname sig in

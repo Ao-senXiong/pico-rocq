@@ -125,15 +125,30 @@ Definition wf_r_typable (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (sqt:
   | _, _ => False
   end.
 
+Lemma vpa_qualified_type_sctype : forall q sqt,
+  sctype (vpa_qualified_type q sqt) = sctype sqt.
+Proof.
+  intros.
+  unfold vpa_qualified_type, sctype.
+  destruct sqt.
+  reflexivity.
+Qed.
+
 (* If a heap location is typable by T, its runtime object's base type must be a subtype of T0 *)
 Lemma r_obj_subtype_sqt :
   forall CT rΓ h ι sqt o rt,
+    wf_stypeuse CT (sqtype sqt) (sctype sqt) ->
     wf_r_typable CT rΓ h ι sqt ->
+    wf_heap CT h ->
     runtime_getObj h ι = Some o ->
     rctype (rt_type o) = rt ->
     base_subtype CT rt (sctype sqt).
 Proof.
-  intros CT rΓ h ι sqt rqt H Hwf Hbasetype.
+  intros CT rΓ h ι sqt rqt H Hstypuse Hwf Hheap Hbasetype.
+  assert (ι < dom h).
+  {
+    apply runtime_getObj_dom in Hbasetype.  exact Hbasetype.
+  }
   unfold wf_r_typable in Hwf.
   remember (r_type h ι) as T eqn:Hr_type.
   destruct T as [rqt'|].
@@ -144,9 +159,37 @@ Proof.
       destruct (r_muttype h ι') as [q|] eqn:Hmuttype.
       * 
         apply qualified_type_subtype_base_subtype with (CT := CT) in Hwf.
-        admit.
-        admit.
-        admit.
+          intro Heq.
+          unfold r_type in Hr_type.
+          rewrite Hbasetype in Hr_type.
+          injection Hr_type as Hrqt.
+          rewrite <- Heq.
+          rewrite <- Hrqt.
+          rewrite vpa_qualified_type_sctype in Hwf.
+          exact Hwf.
+          unfold runtime_type_to_qualified_type, sctype.
+          simpl.
+          unfold r_type in Hr_type.
+          rewrite Hbasetype in Hr_type.
+          injection Hr_type as Hrqt.
+          unfold wf_heap in Hheap.
+          specialize Hheap with ι.
+          specialize (Hheap H0).
+          unfold wf_obj in Hheap.
+          rewrite Hbasetype in Hheap.
+          destruct Hheap as [Hrtypeuse Hrdom].
+          unfold wf_rtypeuse in Hrtypeuse.
+          destruct (bound CT (rctype (rt_type rqt))) as [q_c_val|] eqn:Hbound.
+          -- rewrite Hrqt. exact Hrtypeuse.
+          -- contradiction.
+          -- 
+          rewrite vpa_qualified_type_sctype.
+          unfold wf_stypeuse in Hstypuse.
+          unfold wf_stypeuse in Hstypuse.
+          destruct (bound CT (sctype sqt)) as [q_c_val|] eqn:Hbound.
+          ++ destruct Hstypuse as [_ Hdom].
+            exact Hdom.
+          ++ contradiction.
       * 
         exfalso. (* r_muttype should not be None if r_basetype is Some *)
         auto.
@@ -156,7 +199,7 @@ Proof.
   - 
     exfalso. (* r_type should not be None if r_basetype is Some *)
     auto.
-Admitted.
+Qed.
 
 (* TODO: AOSEN do we need this lemma to generalize to + k instead + 1? *)
 Lemma collect_fields_fuel_fuel_increase :

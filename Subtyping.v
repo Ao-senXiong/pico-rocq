@@ -10,7 +10,7 @@ Inductive q_subtype : q -> q -> Prop :=
       q_subtype q1 q1
   | q_rd : forall q1,
       q_subtype q1 Rd
-  | q_bot_lost: forall q1,
+  | q_bot: forall q1,
       q_subtype Bot q1
 where "q1 ⊑ q2" := (q_subtype q1 q2).
 Global Hint Constructors q_subtype: typ.
@@ -30,25 +30,6 @@ Proof.
     inversion H0; eauto with typ lia.
 Qed.
 Global Hint Resolve q_subtype_trans: typ.
-
-(* Find a class declaration in the class table *)
-Definition find_class (CT : class_table) (C : class_name) : option class_def :=
-    gget CT C.
-
-Lemma find_class_dom : forall CT C x,
-  find_class CT C = Some x -> C < dom CT.
-Proof.
-  intros. unfold find_class in H. apply gget_dom in H. exact H.
-Qed.
-
-Lemma find_class_not_dom: forall CT C,
-  find_class CT C = None -> C >= dom CT.
-Proof.
-  intros CT C H.
-  unfold find_class in H.
-  apply gget_not_dom in H.
-  exact H.
-Qed.
   
 (* Java base type subtyping *)
 Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
@@ -63,6 +44,7 @@ Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
   | base_extends : forall (CT : class_table) (C D : class_name),
       C < dom CT ->
       D < dom CT ->
+      parent CT C = Some D ->
       base_subtype CT C D.
 Global Hint Constructors base_subtype: typ.
 

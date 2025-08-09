@@ -5,8 +5,6 @@ Require Export Notations LibTactics Tactics.
 Require Export ssreflect ssrbool Coq.Sets.Finite_sets_facts.
 From RecordUpdate Require Import RecordUpdate.
 
-(* Implicit Type (σ: Store) (ρ ω: Env) (l: Loc) (L: LocSet) (Σ: StoreTyping) (T: Tpe) (μ: Mode) (Γ: EnvTyping). *)
-
 (* ------------------------------------------------------------------------ *)
 (** ** Helper functions *)
 Definition gget {X: Type} (l : list X)  : Loc -> option X := nth_error l.
@@ -782,3 +780,38 @@ Proof.
     steps.
   - destruct l'; steps; eauto.
 Qed. *)
+
+(* Static helpers *)
+
+(* Find a class declaration in the class table *)
+Definition find_class (CT : class_table) (C : class_name) : option class_def :=
+    gget CT C.
+
+Lemma find_class_dom : forall CT C x,
+  find_class CT C = Some x -> C < dom CT.
+Proof.
+  intros. unfold find_class in H. apply gget_dom in H. exact H.
+Qed.
+
+Lemma find_class_not_dom: forall CT C,
+  find_class CT C = None -> C >= dom CT.
+Proof.
+  intros CT C H.
+  unfold find_class in H.
+  apply gget_not_dom in H.
+  exact H.
+Qed.
+
+(* Class bound look up in the class table  *)
+Definition bound (CT : class_table) (C : class_name) : option q_c :=
+  match find_class CT C with
+  | Some decl => Some (class_qualifier (signature decl))
+  | None => None
+  end.
+
+(* Parent class lookup in the class table *)
+Definition parent (CT : class_table) (C : class_name) : option class_name :=
+  match find_class CT C with
+  | Some def => super (signature def)
+  | None => None
+  end.

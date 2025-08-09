@@ -173,8 +173,8 @@ Proof.
         simpl.
         rewrite update_same.
         (* Need to show v2 is well-typed with respect to T' *)
-        assert (Hsubtype: qualified_type_subtype CT T T') by exact H3.
-        assert (Hexpr_type: expr_has_type CT sΓ e T) by exact H0.
+        assert (Hsubtype: qualified_type_subtype CT Te Tx) by exact H3.
+        assert (Hexpr_type: expr_has_type CT sΓ e Te) by exact H0.
         rewrite <- Hlen; exact Hi.
         destruct v2 as [|loc].
         -- (* Case: v2 = Null_a *)
@@ -275,9 +275,9 @@ Proof.
     + admit.
   - (* Case: stmt = Call *)
     intros.
-    inversion H11; subst.
+    inversion H8; subst.
     unfold wf_r_config in *.
-    destruct H10 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct H7 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) exact Hclass.
     + admit.
@@ -368,7 +368,7 @@ Proof.
         apply nth_error_None in Hgetval.
         lia.
     + (* Case: e = EField *)
-      destruct H4 as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+      destruct H4 as [ _ [ Hheap [ Hrenv [ Hsenv [Henvmatch Hresult]]]]].
       unfold static_getType in H3.
       assert (HxDom : x < dom sΓ) by (apply nth_error_Some; eauto).
       pose proof Hresult as Hresult_copy.
@@ -413,6 +413,7 @@ Proof.
             ** (* Case: field does not exist *)
               exfalso.
               unfold wf_heap in Hheap.
+              pose proof Hheap as Hheap_copy.
               assert (Hwf_o: wf_obj CT h l).
               {
                 apply Hheap.
@@ -429,7 +430,7 @@ Proof.
               unfold fields in H4.
               specialize (Hresult v Hv' T0 Hv).
               rewrite Hgety in Hresult.
-              apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [| exact Hgetval | reflexivity ].
+              apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [| | exact Hheap_copy | exact Hgetval | reflexivity ].
               unfold gget in H4.
               assert (v0 < dom (collect_fields CT (sctype T0))) by (apply nth_error_Some; congruence).
               specialize (collect_fields_monotone CT (rctype (rt_type o)) (sctype T0) Hresult).
@@ -439,6 +440,9 @@ Proof.
               assert (v0 < d2) by (subst; apply H5).
               assert (v0 >= d1) by (subst; apply Hgetfield).
               lia. (* subtyping polymorphism*)
+              unfold wf_senv in Hsenv.
+              destruct Hsenv as [Hsenv_dom H_static_typeuse].
+              apply (Forall_nth_error _ _ _ _ H_static_typeuse Hv).
           ++ (* can not find object by address l *)
             exfalso.
             unfold wf_renv in Hrenv.
@@ -461,7 +465,7 @@ Proof.
         apply SBS_FldWrite_NPE.
         exact Hgetx.
       * (* Case: v = Iot loc *)
-        destruct H7 as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+        destruct H7 as [ _ [ Hheap [ Hrenv [ Hsenv [Henvmatch Hresult]]]]].
         destruct (runtime_getObj h l) eqn:Hgetval.
         -- (* can find object by address l *)
           destruct (getVal o.(fields_map) f) eqn:Hgetfield.
@@ -546,6 +550,7 @@ Proof.
               lia.
           ++ (* Case: field does not exist *)
             exfalso.
+            pose proof Hheap as Hheap_copy.
             unfold wf_heap in Hheap.
             assert (Hwf_o: wf_obj CT h l).
             {
@@ -568,8 +573,7 @@ Proof.
             }
             specialize (Hresult x Hx Tx H2).
             rewrite Hgetx in Hresult.
-            apply r_obj_subtype_sqt with (o := o) (rt := rctype
-            (rt_type o)) in Hresult; [| exact Hgetval | reflexivity ].
+            apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [| |exact Hheap_copy | exact Hgetval | reflexivity ].
             unfold gget in Hx.
             assert (f < dom (collect_fields CT (sctype Tx))) as Hf.
             {
@@ -585,6 +589,10 @@ Proof.
             assert (f < d2) by (subst; apply Hf).
             assert (f >= d1) by (subst; apply Hgetfield).
             lia. (* subtyping polymorphism*)
+            unfold wf_senv in Hsenv.
+            destruct Hsenv as [Hsenv_dom H_static_typeuse].
+            unfold static_getType in H2.
+            apply (Forall_nth_error _ _ _ _ H_static_typeuse H2).
         -- (* can not find object by address l *)
         exfalso.
         unfold wf_renv in Hrenv.
@@ -604,7 +612,6 @@ Proof.
     destruct H as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
     destruct Hrenv as [Hreceiver [Hreceiverval Hrenv]].
     + (* can find x in runtime env*)
-      (* TODO(AOSEN): update the heap here  *)
       destruct (runtime_lookup_list rΓ args) as [args' |] eqn:Hlookup.
       2:{
         admit.
@@ -665,7 +672,7 @@ Proof.
       lia.
   - (* Case: stmt = call *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
-    destruct H14 as [ Hclass [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+    destruct H as [ Hclass [ Hheap [ Hrenv [ Hsenv [Henvmatch Hresult]]]]].
     + (* can find x in runtime env*)
       destruct (runtime_getVal rΓ y) eqn:Hgety.
       * (* can find y in runtime env *)
@@ -680,13 +687,13 @@ Proof.
           2:{
             unfold runtime_lookup_list in Hlookup. unfold static_getType_list in H6.
             exfalso.
-            apply mapM_Some_forall in H6.
+            apply mapM_Some_forall in H3.
             apply mapM_None_exists in Hlookup.
             destruct Hlookup as [testx [Hinargs Hnone]].
             assert (Htestx_exists: exists y : qualified_type, static_getType sΓ testx = Some y).
             {
-              apply Forall_forall with (x := testx) in H6.
-              - exact H6.
+              apply Forall_forall with (x := testx) in H3.
+              - exact H3.
               - exact Hinargs.
             }
             destruct Htestx_exists as [testy Hsome].
@@ -723,13 +730,17 @@ Proof.
             specialize (Hresult y). rewrite -> Henvmatch in Hresult.
             apply runtime_getVal_dom in Hgety as Hgety_dom.
             specialize (Hresult Hgety_dom).
-            specialize (Hresult Ty H5).
+            specialize (Hresult Ty H2).
             rewrite Hgety in Hresult.
-            apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [| exact Hobj | reflexivity ].
+            apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [ | | exact Hheap | exact Hobj | reflexivity ].
             (* apply subtype_lookup_fail with (CT := CT) (C1 := rctype (rt_type o)) (C2 := sctype Ty) (m := m) in Hlookupmbody. *)
             (* AOSEN: Method lookup and dynamic dispatch *)
             (* specialize (Hresult y). *)
             admit.
+            unfold wf_senv in Hsenv.
+            destruct Hsenv as [Hsenv_dom H_static_typeuse].
+            unfold static_getType in H2.
+            apply (Forall_nth_error _ _ _ _ H_static_typeuse H2).
           }
           destruct (method_def_lookup CT C m) as [mdef |] eqn:Hlookupmdef.
           2:{
@@ -773,7 +784,7 @@ Proof.
             admit. (* This is the object case, should be discharged by more work*)
           }
           remember (mkr_env (Iot l :: args')) as rΓ'.
-          destruct H14 as [Hwf_cons [Hwf_mets Hbound]].
+          destruct H as [Hwf_cons [Hwf_mets Hbound]].
           assert (C = C0).
           {
             admit. (* They are the same because of class lookup*)
@@ -788,7 +799,7 @@ Proof.
           {
             admit. (* This is something need to be proved, in Dafny, it is more modular *)
           }
-          specialize (H11 rΓ' h Hwf_rconfig_mbody).
+          (* specialize (H11 rΓ' h Hwf_rconfig_mbody).
           destruct H11 as [rΓ'' [h' [Heval | Hnpe]]].
           {
             exists rΓ'' h'.
@@ -827,17 +838,18 @@ Proof.
               }
               replace H2 with mbody in Hnpe.
               exact Hnpe.
-          }
+          } *)
+           admit.
       * (* can not find y in runtime env *)
         exfalso.
         apply runtime_getVal_not_dom in Hgety.
-        apply static_getType_dom in H5.
+        apply static_getType_dom in H2.
         lia.
     + (* can not find x in runtime env*)
       exfalso.
       apply runtime_getVal_not_dom in Hgetx.
-      apply static_getType_dom in H4.
-      destruct H14 as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+      apply static_getType_dom in H1.
+      destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
       lia.
   - (* Case: stmt = seq *)
     intros. specialize (IHstmt_typing1 rΓ h).  apply IHstmt_typing1 in H as Ind1.
@@ -875,7 +887,7 @@ Admitted.
 
 Theorem readonly_pico :
     forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs lhs anymethod anyrq,
-      stmt = SFldWrite readonlyx anyf rhs \/ stmt =  SCall lhs anymethod readonlyx [] -> 
+      stmt = (SFldWrite readonlyx anyf rhs) \/ stmt =  SCall lhs anymethod readonlyx [] -> 
       static_getType sΓ readonlyx = Some qt ->
       (* This is the interesting part, I think I have to supply empty arguments or all arguments as immutable because otherwise I don't if the readonly receiver is aliased with some mutable part *)
       wf_r_config CT sΓ rΓ h ->
