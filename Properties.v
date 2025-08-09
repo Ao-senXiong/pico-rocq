@@ -239,9 +239,9 @@ Proof.
     + admit.
   - (* Case: stmt = New *)
     intros.
-    inversion H7; subst.
+    inversion H10; subst.
     unfold wf_r_config in *.
-    destruct H6 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct H9 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) exact Hclass.
     + (* wellformed heap *) admit.
@@ -609,7 +609,7 @@ Proof.
       lia.
   - (* Case: stmt = new *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
-    destruct H as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
+    destruct H10 as [ _ [ Hheap [ Hrenv [ _ [Henvmatch Hresult]]]]].
     destruct Hrenv as [Hreceiver [Hreceiverval Hrenv]].
     + (* can find x in runtime env*)
       destruct (runtime_lookup_list rΓ args) as [args' |] eqn:Hlookup.
@@ -667,8 +667,8 @@ Proof.
     + (* can not find x in runtime env*)
       exfalso.
       apply runtime_getVal_not_dom in Hgetx.
-      apply static_getType_dom in H1.
-      destruct H as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
+      apply static_getType_dom in H2.
+      destruct H10 as [ _ [ _ [ _ [ _ [Henvmatch _]]]]].
       lia.
   - (* Case: stmt = call *)
     destruct (runtime_getVal rΓ x) eqn:Hgetx.
@@ -883,6 +883,16 @@ Theorem immutability_pico :
     sf_assignability CT C f = Some Final \/ sf_assignability CT C f = Some RDA ->
     nth_error vals f = nth_error vals' f.
 Proof.
+  intros; induction H3.
+  - (* Skip *) inversion H4. intros; subst; rewrite H0 in H4; injection H4; auto.
+  - (* Local *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
+  - (* VarAss *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
+  - (* FldWrite *) 
+    (* Key case: show contradiction with can_assign for immutable Final/RDA fields *)
+    admit.
+  - (* New *) (* h' = h ++ [new_obj], so l < dom h means same object *) admit.
+  - (* Call *) (* Similar to other non-mutating cases *) admit.
+  - (* Seq *) (* Apply IH transitively *) admit.
 Admitted.
 
 Theorem readonly_pico :

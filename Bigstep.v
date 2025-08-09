@@ -70,6 +70,14 @@ Definition update_field (h: heap) (ι: Loc) (f: var) (v: value) : heap :=
       in update ι new_obj h
   end.
 
+Lemma update_field_length : forall h ι f v,
+  dom (update_field h ι f v) = dom h.
+Proof.
+  intros.
+  unfold update_field.
+  destruct (runtime_getObj h ι); [apply update_length | reflexivity].
+Qed.
+
 (* ------------------RUNTIME WELLFORMEDNESS RULES------------------*)
 (* Wellformed Runtime Type use  *)
 Definition wf_rtypeuse (CT: class_table) (q: q_r) (c: class_name) : Prop :=

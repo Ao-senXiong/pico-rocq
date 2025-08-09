@@ -116,12 +116,12 @@ Definition method_body_lookup (CT : class_table) (C : class_name) (m : method_na
   | None => None
   end.
 
-Lemma subtype_inherits_methods : forall CT C1 C2 m mdef1 mdef2,
+Lemma subtype_inherits_methods : forall CT C1 C2 m mdef2,
   base_subtype CT C1 C2 ->
   method_def_lookup CT C2 m = Some mdef2 ->
-  method_def_lookup CT C1 m = Some mdef1.
+  exists mdef1, method_def_lookup CT C1 m = Some mdef1.
 Proof.
-  intros CT C1 C2 m mdef Hsub Hlookup.
+  intros CT C1 C2 m mdef2 Hsub Hlookup.
   
   (* This follows from the definition of method_def_lookup *)
   (* which searches up the inheritance hierarchy *)
@@ -131,11 +131,32 @@ Proof.
   (* Use induction on the subtype relation and 
      properties of the method lookup algorithm *)
   induction Hsub.
-  
-  - (* Base case: direct inheritance *)
-    (* If C1 directly extends C2, then C1's lookup 
-       searches C1 first, then C2 *)
-    admit. (* Details depend on mdef_lookup implementation *)
+- (* reflexivity case *)
+  rewrite Hlookup.
+  eexists.
+  reflexivity.
+- (* transitivity case *)
+  specialize (IHHsub2 Hlookup).
+  destruct IHHsub2 as [mdef_intermediate Hmdef_intermediate].
+  (* specialize (IHHsub1 Hmdef_intermediate). *)
+  (* exact IHHsub1. *)
+  admit.
+- (* direct inheritance case *)
+(* unfold method_def_lookup in *.
+simpl.
+assert (Hfind: find_class CT C = Some (nth C CT default_class_def)).
+{ apply find_class_some. exact H. }
+rewrite Hfind.
+destruct (find (fun mdef => eq_method_name (mname (msignature mdef)) m) (methods (body (nth C CT default_class_def)))) eqn:Hmethods.
+- (* Case: C has its own method m *)
+  exists m0.
+  reflexivity.
+- (* Case: C doesn't have method m, inherit from parent *)
+  assert (Hsuper: super (signature (nth C CT default_class_def)) = Some D).
+  { admit. (* follows from H1 and class table structure *) }
+  rewrite Hsuper.
+  exists mdef2.
+  exact Hlookup. *)
 Admitted.
 
 Lemma subtype_lookup_fail : forall CT C1 C2 m,
@@ -154,18 +175,18 @@ Proof.
     
     (* Since C1 is a subtype of C2, and C2 has method m, 
        then C1 should either have m or inherit it from C2 *)
-    assert (Hinherit: method_def_lookup CT C1 m = Some mdef).
+    assert (Hinherit: exists mdef1, method_def_lookup CT C1 m = Some mdef1).
     {
       (* Use method inheritance property *)
-      apply subtype_inherits_methods with (C2 := C2) (mdef1 := mdef) (mdef2 := mdef).
+      apply subtype_inherits_methods with (CT := CT) (C1 := C1) (C2 := C2) (m := m) (mdef2 := mdef).
       - exact Hsub.
       - exact HC2_lookup.
     }
     
     (* This contradicts Hlookup *)
     rewrite Hlookup in Hinherit.
-    discriminate Hinherit.
-    
+    destruct Hinherit as [mdef1 Hcontra].
+    discriminate Hcontra.
   - (* Case: method_def_lookup CT C2 m = None *)
     (* This is exactly what we want to prove *)
     reflexivity.
@@ -257,16 +278,18 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       stmt_typing CT sΓ (SFldWrite x f y) sΓ
 
   (* Object creation *)
-  | S_New : forall CT sΓ x Tx q C args argtypes n1 consig,
+  | S_New : forall CT sΓ x Tx (qc:q_c) C args argtypes n1 consig consreturn,
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType_list sΓ args = Some argtypes ->
       constructor_sig_lookup CT C = Some consig ->
       length consig.(sparams) = n1 ->
-      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj q) T)) (firstn n1 argtypes) consig.(sparams) ->
-      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj q) T)) (skipn n1 argtypes) consig.(cparams) ->
-      (* Object creation check is missing; rhs to lhs assignment check is missing; which properties need to be strength *)
-      stmt_typing CT sΓ (SNew x q C args) sΓ
+      consig.(cqualifier) = consreturn ->
+      vpa_mutabilty (q_c_proj qc) (q_c_proj consreturn) = q_c_proj qc ->
+      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj qc) T)) (firstn n1 argtypes) consig.(sparams) ->
+      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj qc) T)) (skipn n1 argtypes) consig.(cparams) ->
+      qualified_type_subtype CT (Build_qualified_type (q_c_proj qc) C) Tx ->
+      stmt_typing CT sΓ (SNew x qc C args) sΓ
 
   (* Method call *)
   | ST_Call : forall CT sΓ x m y args argtypes Tx Ty m_sig,
@@ -397,14 +420,15 @@ Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
   (* Method is not overriding *)
   | WFPlainMethod: forall CT C mdef mbody sΓ sΓ' mbodyrettype,
   find_overriding_method CT C (msignature mdef) = None -> (* No overriding method *)
+  let msig := msignature mdef in
   let methodbody := mbody mdef in
   let mbodystmt := mbody_stmt methodbody in
+  sΓ = msig.(mreceiver) :: msig.(mparams) ->
   stmt_typing CT sΓ mbodystmt sΓ' ->
   let mbodyretvar := mreturn methodbody in
   mbodyretvar < dom sΓ' -> (* Return variable is in the static environment after method body *)
   nth_error sΓ' mbodyretvar = Some mbodyrettype ->
-  let msignature := msignature mdef in
-  let methodreturntype := mret msignature in
+  let methodreturntype := mret msig in
   qualified_type_subtype CT mbodyrettype methodreturntype -> 
   wf_method CT C mdef
 
@@ -417,6 +441,7 @@ Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
   && eq_class_name (sctype (mret thismsig)) (sctype (mret supermsig)) ->
   let methodbody := mbody mdef in
   let mbodystmt := mbody_stmt methodbody in
+  sΓ = thismsig.(mreceiver) :: thismsig.(mparams) ->
   stmt_typing CT sΓ mbodystmt sΓ' ->
   let mbodyretvar := mreturn methodbody in
   mbodyretvar < dom sΓ' -> (* Return variable is in the static environment after method body *)
@@ -448,7 +473,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   wf_constructor CT class_name cdef.(body).(constructor) ->
   wf_class CT cdef
 
-(* Other object : TODO how to prevent C extends D; D extends C can be checked by index *) 
+(* Other object *) 
 | WFOtherDef: forall CT cdef superC thisC, 
   cdef.(signature).(super) = Some superC -> (* Not Object class *)
   cdef.(signature).(cname) = thisC ->
