@@ -614,7 +614,19 @@ Proof.
     + (* can find x in runtime env*)
       destruct (runtime_lookup_list rΓ args) as [args' |] eqn:Hlookup.
       2:{
-        admit.
+        apply mapM_Some_forall in H3.
+        apply mapM_None_exists in Hlookup.
+        destruct Hlookup as [testx [Hinargs Hnone]].
+        assert (Htestx_exists: exists y : qualified_type, static_getType sΓ testx = Some y).
+        {
+          apply Forall_forall with (x := testx) in H3.
+          - exact H3.
+          - exact Hinargs.
+        }
+        destruct Htestx_exists as [testy Hsome].
+        apply static_getType_dom in Hsome.
+        apply runtime_getVal_not_dom in Hnone.
+        lia.
       }
       destruct Hreceiverval as [iot Hgetrecv].
       destruct (r_muttype h iot) as [qrecv |] eqn:Hgetrecvmut.
