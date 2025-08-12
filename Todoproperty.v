@@ -1,3 +1,11 @@
+(* Require Import Syntax Notations Helpers Typing Subtyping Bigstep.
+Require Import List.
+Import ListNotations.
+Require Import String.
+From RecordUpdate Require Import RecordUpdate.
+Require Import Coq.Logic.Classical_Prop.
+Require Import NZOrder.
+
 Theorem progress_pico :
   forall CT sΓ rΓ h stmt sΓ',
     wf_r_config CT sΓ rΓ h ->
@@ -599,4 +607,4 @@ Proof.
     +
       exists rΓ' h'. right. apply SBS_Seq_NPE_first; assumption.
 Admitted.
-(* Qed. *)
+Qed. *)
