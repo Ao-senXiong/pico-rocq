@@ -184,6 +184,14 @@ Proof.
 Qed.
 Global Hint Resolve gget_not_dom: updates.
 
+Lemma gget_In :
+  forall {X : Type} (l : list X) (C : Loc) x,
+    gget l C = Some x -> List.In x l.
+Proof.
+  unfold gget.
+  intros. eapply nth_error_In; eauto.
+Qed.
+
 Lemma runtime_getObj_dom:
   forall l O h, runtime_getObj h l = Some O -> l < dom h.
 Proof.
