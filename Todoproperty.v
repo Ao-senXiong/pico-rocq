@@ -6,6 +6,176 @@ From RecordUpdate Require Import RecordUpdate.
 Require Import Coq.Logic.Classical_Prop.
 Require Import NZOrder.
 
+(* TODO: AOSEN do we need this lemma to generalize to + k instead + 1? *)
+Lemma collect_fields_fuel_fuel_increase :
+  forall fuel CT C decl,
+    find_class CT C = Some decl ->
+    fuel >= dom CT ->
+    collect_fields_fuel fuel CT C = collect_fields_fuel (S fuel) CT C.
+Proof.
+  intros.
+  induction fuel as [|fuel' IH].
+  -
+    exfalso.
+    unfold find_class in H.
+    destruct CT as [|hd tl].
+    + simpl in H.
+      unfold gget in H.
+      rewrite nth_error_nil in H. discriminate.
+    + simpl in H0. lia.
+  - simpl.
+    destruct (find_class CT C) as [def|] eqn:Hfind; [| reflexivity].
+    + 
+    destruct (super (signature def)) as [superC|]; [| reflexivity].
+    (* apply IH. *)
+    admit.
+      (* * f_equal. apply IH. lia.
+      * reflexivity.
+    + reflexivity. *)
+Admitted.
+
+Lemma collect_fields_fuel_step :
+  forall fuel CT C decl,
+    find_class CT C = Some decl ->
+    forall superC,
+      super (signature decl) = Some (superC) ->
+      collect_fields_fuel (S fuel) CT C =
+      collect_fields_fuel fuel CT superC ++ fields (body decl).
+Proof.
+  intros fuel CT C decl Hfind superC Hsuper.
+  simpl.
+  rewrite Hfind.
+  rewrite Hsuper.
+  simpl.
+  reflexivity.
+Qed.
+
+Lemma collect_fields_monotone :
+  forall CT Csub Csup,
+    base_subtype CT Csub Csup ->
+    dom (collect_fields_fuel dom CT CT Csup) <=
+    dom (collect_fields_fuel dom CT CT Csub).
+Proof.
+  intros CT Csub Csup Hsub.
+  induction Hsub.
+  - 
+    reflexivity.
+  -
+    exact (Nat.le_trans _ _ _ IHHsub2 IHHsub1).
+  -
+    destruct (find_class CT C) as [declsub|] eqn:Hfindsub.
+    +
+      specialize (collect_fields_fuel_step dom CT CT C declsub Hfindsub) as Hstep.
+      destruct (super (signature declsub)) as [superC|] eqn:Hsuper.
+      *
+        admit.
+      *
+        admit.   
+    +
+      exfalso. unfold find_class in Hfindsub. unfold gget in Hfindsub.
+      apply nth_error_Some in H.
+      congruence.
+    (* apply Hstep.
+    rewrite dom_app.
+    apply Nat.le_add_r. *)
+Admitted.
+
+(* Typable preserve assignability *)
+Lemma r_typable_assignable :
+  forall CT rΓ h ι sqt,
+    ι < dom h ->
+    wf_r_typable CT rΓ h ι sqt ->
+    forall q rt f sa ra, 
+    r_muttype h ι = Some q ->
+    r_basetype h ι = Some rt ->
+    sf_assignability CT (sctype sqt) f = Some sa ->
+    sf_assignability CT rt f = Some ra ->
+    vpa_assignability (sqtype sqt) sa = Assignable ->
+    vpa_assignability (q_r_proj q) ra = Assignable.
+Proof.
+  intros.
+  unfold wf_r_typable in H0.
+  unfold r_muttype in H1.
+  destruct (r_type h ι) as [rqt|] eqn:Hr_type; [|exfalso; unfold r_type in Hr_type; auto].
+
+Admitted.
+
+Lemma subtype_inherits_methods : forall CT C1 C2 m mdef2,
+  base_subtype CT C1 C2 ->
+  method_def_lookup CT C2 m = Some mdef2 ->
+  exists mdef1, method_def_lookup CT C1 m = Some mdef1.
+Proof.
+  intros CT C1 C2 m mdef2 Hsub Hlookup.
+  
+  (* This follows from the definition of method_def_lookup *)
+  (* which searches up the inheritance hierarchy *)
+  unfold method_def_lookup in *.
+  unfold mdef_lookup in *.
+  
+  (* Use induction on the subtype relation and 
+     properties of the method lookup algorithm *)
+  induction Hsub.
+- (* reflexivity case *)
+  rewrite Hlookup.
+  eexists.
+  reflexivity.
+- (* transitivity case *)
+  specialize (IHHsub2 Hlookup).
+  destruct IHHsub2 as [mdef_intermediate Hmdef_intermediate].
+  (* specialize (IHHsub1 Hmdef_intermediate). *)
+  (* exact IHHsub1. *)
+  admit.
+- (* direct inheritance case *)
+(* unfold method_def_lookup in *.
+simpl.
+assert (Hfind: find_class CT C = Some (nth C CT default_class_def)).
+{ apply find_class_some. exact H. }
+rewrite Hfind.
+destruct (find (fun mdef => eq_method_name (mname (msignature mdef)) m) (methods (body (nth C CT default_class_def)))) eqn:Hmethods.
+- (* Case: C has its own method m *)
+  exists m0.
+  reflexivity.
+- (* Case: C doesn't have method m, inherit from parent *)
+  assert (Hsuper: super (signature (nth C CT default_class_def)) = Some D).
+  { admit. (* follows from H1 and class table structure *) }
+  rewrite Hsuper.
+  exists mdef2.
+  exact Hlookup. *)
+Admitted.
+
+Lemma subtype_lookup_fail : forall CT C1 C2 m,
+  base_subtype CT C1 C2 ->
+  method_def_lookup CT C1 m = None ->
+  method_def_lookup CT C2 m = None.
+Proof.
+  intros CT C1 C2 m Hsub Hlookup.
+  
+  (* Proof by contradiction *)
+  destruct (method_def_lookup CT C2 m) as [mdef|] eqn:HC2_lookup.
+  
+  - (* Case: method_def_lookup CT C2 m = Some mdef *)
+    (* This contradicts our assumption that C1 lookup fails *)
+    exfalso.
+    
+    (* Since C1 is a subtype of C2, and C2 has method m, 
+       then C1 should either have m or inherit it from C2 *)
+    assert (Hinherit: exists mdef1, method_def_lookup CT C1 m = Some mdef1).
+    {
+      (* Use method inheritance property *)
+      apply subtype_inherits_methods with (CT := CT) (C1 := C1) (C2 := C2) (m := m) (mdef2 := mdef).
+      - exact Hsub.
+      - exact HC2_lookup.
+    }
+    
+    (* This contradicts Hlookup *)
+    rewrite Hlookup in Hinherit.
+    destruct Hinherit as [mdef1 Hcontra].
+    discriminate Hcontra.
+  - (* Case: method_def_lookup CT C2 m = None *)
+    (* This is exactly what we want to prove *)
+    reflexivity.
+Qed.
+
 Theorem progress_pico :
   forall CT sΓ rΓ h stmt sΓ',
     wf_r_config CT sΓ rΓ h ->
