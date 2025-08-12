@@ -298,6 +298,26 @@ Proof.
     exact IH2.
 Admitted.
 
+Lemma progress_pico_method_call :
+  forall CT sΓ rΓ h stmt sΓ' C m mbody sΓ_m sΓ_m' def,
+    wf_r_config CT sΓ rΓ h ->
+    stmt_typing CT sΓ stmt sΓ' ->
+    find_class CT C = Some def ->
+    method_body_lookup CT C m = Some mbody ->
+    stmt_typing CT sΓ_m mbody.(mbody_stmt) sΓ_m' ->
+    exists rΓ' h', eval_stmt OK rΓ h stmt OK rΓ' h' \/ eval_stmt OK rΓ h stmt NPE rΓ' h'.
+Proof.    
+  intros CT sΓ rΓ h stmt sΓ' C m mbody sΓ_m sΓ_m' def Hwfconfig H0  Hclass Hbody Htyping. 
+  generalize dependent h. generalize dependent rΓ.
+  (* do induction, while give names to each introduced item. *)
+  induction H0 as [H0 | CT sΓ T x sΓ' H0 H1 H2 H3
+  | CT sΓ x e T T' H0 H1 H2 H3
+  | CT sΓ x f y Tx Ty fieldT H0 H1 H2 H3 H4 H5
+  | CT sΓ x Tx q C_1 args argtypes n1 consig H0 H1 H2 H3 H4 H5 H6
+  | CT sΓ x mname y args argtypes Tx Ty m_sig H0 H1 H2 H3 H4 H5 H6 H7 H8 H9 H10 H11 H12 H13
+  | CT sΓ s1 sΓ' s2 sΓ'' H0_ IHstmt_typing1 H0_0 IHstmt_typing2 ]; intros.   
+  6:{}
+
 Theorem progress_pico :
   forall CT sΓ rΓ h stmt sΓ',
     wf_r_config CT sΓ rΓ h ->
@@ -745,10 +765,30 @@ Proof.
             specialize (Hresult Ty H2).
             rewrite Hgety in Hresult.
             apply r_obj_subtype_sqt with (o := o) (rt := rctype (rt_type o)) in Hresult; [ | | exact Hheap | exact Hobj | reflexivity ].
-            (* apply subtype_lookup_fail with (CT := CT) (C1 := rctype (rt_type o)) (C2 := sctype Ty) (m := m) in Hlookupmbody. *)
-            (* AOSEN: Method lookup and dynamic dispatch *)
-            (* specialize (Hresult y). *)
-            admit.
+            unfold method_body_lookup in Hlookupmbody.
+            assert (method_def_lookup CT C m = None).
+            {
+              unfold method_def_lookup.
+              destruct (mdef_lookup dom CT CT C m) eqn:Hmdef.
+              - (* Case: Some mdef *)
+                simpl in Hlookupmbody.
+                discriminate Hlookupmbody.
+              - (* Case: None *)
+                trivial.
+            }
+            assert (Hcontra: method_def_lookup CT (sctype Ty) m = None).
+            {
+              apply subtype_lookup_fail with (CT := CT) (C1 := rctype (rt_type o)) (C2 := sctype Ty) (m := m).
+              - exact Hresult.
+              - unfold r_basetype in Hgetbasetype. rewrite Hobj in Hgetbasetype. injection Hgetbasetype as Heq.
+              symmetry in Heq.
+              rewrite <- Heq.
+              exact H.
+            }
+            unfold method_sig_lookup in H4.
+            unfold method_def_lookup in Hcontra.
+            rewrite Hcontra in H4.
+            discriminate H4.
             unfold wf_senv in Hsenv.
             destruct Hsenv as [Hsenv_dom H_static_typeuse].
             unfold static_getType in H2.
@@ -757,9 +797,10 @@ Proof.
           destruct (method_def_lookup CT C m) as [mdef |] eqn:Hlookupmdef.
           2:{
             exfalso.
-            (* AOSEN: Method lookup and dynamic dispatch *)
-            (* specialize (Hresult y). *)
-            admit.
+            unfold method_body_lookup in Hlookupmbody.
+            unfold method_def_lookup in Hlookupmdef.
+            rewrite Hlookupmdef in Hlookupmbody.
+            discriminate Hlookupmbody.
           }
           destruct (find_class CT C) as [cdef |] eqn:Hcdef. 
           2: {
@@ -785,14 +826,14 @@ Proof.
           assert (HclassC : wf_class CT cdef).
           {
             apply Forall_forall with (x := cdef) in Hclass.
-            exact Hclass.
-            apply find_class_dom in Hcdef.
-            admit.
+            - exact Hclass.
+            - unfold find_class in Hcdef.
+              apply gget_In in Hcdef.
+              exact Hcdef.
           }
 
           inversion HclassC as [ | CT' cdef' superC thisC Hsuper Hcname Hneq Hsig Hbody]; subst.
           1:{
-            unfold method_def_lookup in Hlookupmdef.
             admit. (* This is the object case, should be discharged by more work*)
           }
           remember (mkr_env (Iot l :: args')) as rΓ'.
@@ -804,7 +845,7 @@ Proof.
           replace C0 with C in Hwf_mets.
           assert (wf_method CT C mdef) as Hwf_m.
           {
-            admit. 
+            admit.
           }
           remember (Ty :: argtypes) as sΓ'.
           assert (wf_r_config CT sΓ' rΓ' h) as Hwf_rconfig_mbody.
