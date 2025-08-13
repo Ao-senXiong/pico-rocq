@@ -313,16 +313,55 @@ Theorem immutability_pico :
     sf_assignability CT C f = Some Final \/ sf_assignability CT C f = Some RDA ->
     nth_error vals f = nth_error vals' f.
 Proof.
-  intros; induction H3.
+  intros. induction H3.
   - (* Skip *) inversion H4. intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* Local *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* VarAss *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
+  - (* NPE case *) admit.
   - (* FldWrite *) 
     (* Key case: show contradiction with can_assign for immutable Final/RDA fields *)
     admit.
-  - (* New *) (* h' = h ++ [new_obj], so l < dom h means same object *) admit.
-  - (* Call *) (* Similar to other non-mutating cases *) admit.
-  - (* Seq *) (* Apply IH transitively *) admit.
+  - (* NPE case *) admit.
+  - (* New *) (* h' = h ++ [new_obj], so l < dom h means same object *)
+  intros.
+  inversion H4; subst.
+  (* Since l < dom h, the object at location l is unchanged *)
+  unfold runtime_getObj in H14.
+  rewrite List.nth_error_app1 in H14; auto.
+  unfold runtime_getObj in H0.
+  rewrite H0 in H14.
+  injection H14; intros; subst.
+  reflexivity.
+  - (* Call *) (* Similar to other non-mutating cases *) 
+  intros.
+  (* Apply IH to method body execution *)
+  assert (Hwf_method: wf_r_config CT sΓ' rΓ' h).
+  {
+    unfold wf_r_config in *.
+    destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    repeat split.
+    - exact Hclass.
+    - exact Hheap.
+    - rewrite H11. simpl. lia.
+    - exists ly. rewrite H11. simpl. reflexivity.
+    - admit. (* Where to introduce static environment inside the body*)
+    - admit.
+    - admit.
+    - admit.
+    - admit. 
+  }
+  assert (Htyping_method: stmt_typing CT sΓ mstmt sΓ').
+  {
+    admit.
+  }
+  specialize (IHeval_stmt H H0 Hwf_method Htyping_method H4) as IH.
+  exact IH.
+  - (* NPE case*) admit. 
+  - (* NPE case*) admit. 
+  - (* Seq *) (* Apply IH transitively *) 
+  admit.
+  - (* NPE case*) admit.  
+  - (* NPE case*) admit. 
 Admitted.
 
 Theorem readonly_pico :
