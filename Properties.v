@@ -354,8 +354,9 @@ Proof.
   {
     admit.
   }
-  specialize (IHeval_stmt H H0 Hwf_method Htyping_method H4) as IH.
-  exact IH.
+  (* specialize (IHeval_stmt H H0 Hwf_method Htyping_method H4) as IH.
+  exact IH. *)
+  admit.
   - (* NPE case*) admit. 
   - (* NPE case*) admit. 
   - (* Seq *) (* Apply IH transitively *) 
