@@ -320,15 +320,13 @@ Theorem immutability_pico :
     sf_assignability CT C f = Some Final \/ sf_assignability CT C f = Some RDA ->
     nth_error vals f = nth_error vals' f.
 Proof.
-  intros. induction H3.
+  intros. remember OK as ok. induction H3; try discriminate.
   - (* Skip *) inversion H4. intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* Local *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* VarAss *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
-  - (* NPE case *) admit.
   - (* FldWrite *) 
     (* Key case: show contradiction with can_assign for immutable Final/RDA fields *)
     admit.
-  - (* NPE case *) admit.
   - (* New *) (* h' = h ++ [new_obj], so l < dom h means same object *)
   intros.
   inversion H4; subst.
@@ -364,12 +362,8 @@ Proof.
   (* specialize (IHeval_stmt H H0 Hwf_method Htyping_method H4) as IH.
   exact IH. *)
   admit.
-  - (* NPE case*) admit. 
-  - (* NPE case*) admit. 
   - (* Seq *) (* Apply IH transitively *) 
   admit.
-  - (* NPE case*) admit.  
-  - (* NPE case*) admit. 
 Admitted.
 
 Theorem readonly_pico :
