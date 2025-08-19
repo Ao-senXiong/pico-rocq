@@ -106,7 +106,14 @@ Proof.
            ++ (* Case: nth_error (vars rΓ) i = Some v *)
               destruct v as [|loc].
               ** trivial.
-              ** admit.
+              ** unfold wf_r_typable in *. simpl.
+              assert (get_this_var_mapping (vars rΓ ++ [Null_a]) = get_this_var_mapping (vars rΓ)).
+              {
+                unfold get_this_var_mapping.
+                destruct (vars rΓ) as [|v0 vs]; reflexivity.
+              }
+              rewrite H2.
+              exact Hcorr.
            ++ (* Case: nth_error (vars rΓ) i = None *)
               exfalso.
               apply nth_error_None in Hgetval.
