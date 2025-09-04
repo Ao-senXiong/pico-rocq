@@ -207,6 +207,7 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       static_getType sΓ x = Some Tx ->
       static_getType_list sΓ args = Some argtypes ->
       constructor_sig_lookup CT C = Some consig ->
+      x <> 0 ->
       length consig.(sparams) = n1 ->
       consig.(cqualifier) = consreturn ->
       vpa_mutabilty (q_c_proj qc) (q_c_proj consreturn) = q_c_proj qc ->
@@ -223,9 +224,7 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       static_getType sΓ y = Some Ty ->
       static_getType_list sΓ args = Some argtypes ->
       method_sig_lookup CT (sctype Ty) m = Some m_sig ->
-      (* method_body_lookup CT (sctype Ty) m = Some mbody -> *)
-      (* sΓ0 = Ty :: argtypes -> *)
-      (* stmt_typing CT sΓ0 mbody.(mbody_stmt) sΓ1 -> *)
+      x <> 0 -> (* x is not the receiver variable *)
       qualified_type_subtype CT (vpa_qualified_type (sqtype Ty) (mret m_sig)) Tx -> (* assignment subtype checking*)
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreceiver m_sig)) -> (* receiver subtype checking *) 
       Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (sqtype Ty) T)) argtypes (mparams m_sig) -> (* argument subtype checking *)

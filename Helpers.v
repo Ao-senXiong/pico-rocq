@@ -823,3 +823,18 @@ Definition parent (CT : class_table) (C : class_name) : option class_name :=
   | Some def => super (signature def)
   | None => None
   end.
+
+Lemma Forall_update : forall {A : Type} (P : A -> Prop) (l : list A) (n : nat) (v : A),
+  Forall P l ->
+  P v ->
+  n < length l ->
+  Forall P (update n v l).
+Proof.
+  intros A P l n v H_forall H_v H_bound.
+  generalize dependent n.
+  induction l as [|h t IH]; intros n H_bound.
+  - simpl in H_bound. lia.
+  - destruct n as [|n'].
+    + simpl. constructor; [exact H_v | inversion H_forall; exact H2].
+    + simpl. constructor; [inversion H_forall; exact H1 | apply IH; [inversion H_forall; exact H2 | simpl in H_bound; lia]].
+Qed.

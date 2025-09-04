@@ -96,8 +96,25 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
   | Some o =>
       (* The runtime type of the object is well-formed *)
       wf_rtypeuse CT (rt_type o).(rqtype) (rt_type o).(rctype) /\
-      (* The number of fields are the same at runtime and static type *)
-      List.length (fields_map o) = List.length (collect_fields CT (rt_type o).(rctype))
+      (* All field values are well-formed and have correct types *)
+      let field_defs := collect_fields CT (rt_type o).(rctype) in
+      List.length (fields_map o) = List.length field_defs /\
+      Forall2 (fun v fdef => 
+        match v with
+        | Null_a => True
+        | Iot loc => 
+          match runtime_getObj h loc with
+          | Some _ => 
+            (* Field value exists and has correct type *)
+            exists rqt, r_type h loc = Some rqt /\
+            qualified_type_subtype CT 
+              (runtime_type_to_qualified_type rqt)
+              (Build_qualified_type 
+                (q_f_proj (mutability (ftype fdef))) 
+                (f_base_type (ftype fdef)))
+          | None => False
+          end
+        end) (fields_map o) field_defs
   end.
 
 (* Wellformed Runtime environment: a rΓ is well formed if for all variable in its domain, it maps to null_a or a value in the domin of heap *)
@@ -352,7 +369,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
       q_project_q_r (vpa_mutabilty qthis (q_c_proj q_c)) = Some qadapted -> 
       o = mkObj (mkruntime_type qadapted c) (vals) ->
       h' = h++[o] ->
-      rΓ' = rΓ <| vars := update x (Iot (dom h + 1)) rΓ.(vars) |> ->
+      rΓ' = rΓ <| vars := update x (Iot (dom h)) rΓ.(vars) |> ->
       eval_stmt OK rΓ h (SNew x q_c c ys) OK rΓ' h'
 
   (* evaluate method call statement *)
@@ -402,5 +419,39 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
       eval_stmt OK rΓ' h' s2 NPE rΓ'' h'' ->
       eval_stmt OK rΓ h (SSeq s1 s2) NPE rΓ'' h''
 .
+
+Lemma Forall2_nth_error_prop : forall {A B : Type} (P : A -> B -> Prop) (l1 : list A) (l2 : list B) (n : nat) (a : A) (b : B),
+  Forall2 P l1 l2 ->
+  nth_error l1 n = Some a ->
+  nth_error l2 n = Some b ->
+  P a b.
+Proof.
+  intros A B P l1 l2 n a b Hforall2 Hnth1 Hnth2.
+  revert l1 l2 Hforall2 Hnth1 Hnth2.
+  induction n; intros l1 l2 Hforall2 Hnth1 Hnth2.
+  - (* n = 0 *)
+    destruct l1 as [|a1 l1']; [discriminate|].
+    destruct l2 as [|b1 l2']; [discriminate|].
+    inversion Hforall2; subst.
+    simpl in Hnth1, Hnth2.
+    injection Hnth1 as Ha_eq.
+    injection Hnth2 as Hb_eq.
+    subst. exact H2.
+  - (* n = S n' *)
+    destruct l1 as [|a1 l1']; [discriminate|].
+    destruct l2 as [|b1 l2']; [discriminate|].
+    inversion Hforall2; subst.
+    simpl in Hnth1, Hnth2.
+    apply IHn with l1' l2'; assumption.
+Qed.
+
+Lemma nth_error_update_neq : forall {A : Type} (l : list A) (i j : nat) (v : A),
+  i <> j ->
+  nth_error (update i v l) j = nth_error l j.
+Proof.
+  intros A l i j v Hneq.
+  apply update_diff.
+  exact Hneq.
+Qed.
 
 (* evaluate program *)

@@ -19,6 +19,9 @@ Proof.
   generalize dependent h. generalize dependent rΓ.
   generalize dependent h'. generalize dependent rΓ'.
   induction H0.
+  (* 6: { intros. inversion H9; subst. induction H23. 
+  8: { eapply IHeval_stmt; eauto. exact H21. } 
+  } *)
   - (* Case: stmt = Skip *)
     intros.
     inversion H1; subst.
@@ -151,19 +154,56 @@ Proof.
               simpl. (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
               exact Hiot.
     + (* wellformed runtime environment *)
-      (* unfold wf_renv in *.
-      destruct Hrenv as [Hreceiver [Hreceiverval Hallvals]].
-      repeat split.
-      * (* receiver at index 0 *)
-        exact Hreceiver.
-      * (* receiver value wellformed *)
-        exact Hreceiverval.
-      * (* all values wellformed *)
-        apply Forall_forall.
-        intros v Hin.
-        apply Forall_forall with (x := v) in Hallvals; [exact Hallvals |].
-        Show that updating one variable doesn't affect wellformedness of other values *)
-        admit.
+     unfold wf_renv in *.
+      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+      simpl.
+      apply Forall_update.
+      * exact Hallvals.
+      * destruct v2 as [|loc].
+        -- trivial.
+        -- inversion H11; subst.
+          assert (Hloc_in_vars : exists i, nth_error (vars rΓ) i = Some (Iot loc)).
+          ++ apply runtime_getVal_dom in H4.
+            exists x0. 
+            unfold runtime_getVal in H4.
+            inversion H11; subst.
+            unfold runtime_getVal in H7.
+            exact H7.
+          ++ destruct Hloc_in_vars as [i Hi].
+            assert (Hloc_wf := Forall_nth_error _ _ _ _ Hallvals Hi).
+            simpl in Hloc_wf.
+            exact Hloc_wf.
+        ++
+        specialize (Hheap v).
+        assert (Hv_dom : v < dom h').
+        {
+          apply runtime_getObj_dom in H6.
+          exact H6.
+        }
+        specialize (Hheap Hv_dom).
+        unfold wf_obj in Hheap.
+        rewrite H6 in Hheap.
+        destruct Hheap as [_ [_ Hwf_fields]].
+        assert (Hloc_in_fields : nth_error (fields_map o) f = Some (Iot loc)).
+        {
+          exact H7.
+        }
+        assert (Hfield_exists : exists fdef, nth_error (collect_fields CT (rctype (rt_type o))) f = Some fdef).
+        {
+          apply Forall2_length in Hwf_fields.
+          assert (Hf_dom : f < List.length (fields_map o)) by (apply nth_error_Some; rewrite Hloc_in_fields; discriminate).
+          rewrite Hwf_fields in Hf_dom.
+          destruct (nth_error (collect_fields CT (rctype (rt_type o))) f) as [fdef|] eqn:Hfdef.
+          - exists fdef. reflexivity.
+          - exfalso. apply nth_error_None in Hfdef. lia.
+        }
+        destruct Hfield_exists as [fdef Hfdef].
+
+        assert (Hfield_prop := Forall2_nth_error_prop _ _ _ _ _ _ Hwf_fields Hloc_in_fields Hfdef).
+        simpl in Hfield_prop.
+        destruct (runtime_getObj h' loc) as [o'|] eqn:Hloc_obj; [trivial | contradiction].
+      * apply runtime_getVal_dom in H8.
+        exact H8.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength. 
     + (* wellformed static environment *)
       destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
@@ -190,24 +230,46 @@ Proof.
           (* Use subtyping to convert from T to sqt *)
           assert (Hsubtype_preserved : wf_r_typable CT (rΓ <| vars := update x (Iot loc) (vars rΓ) |>) h' loc sqt).
           {
+            assert (Hsqt_eq : sqt = Tx).
+          {
+            unfold static_getType in H2.
+            rewrite H2 in Hnth.
+            injection Hnth as Hsqt_eq.
+            symmetry. exact Hsqt_eq.
+          }
+          subst sqt.
             admit.
-            (* Apply subtyping preservation *)
-            (* eapply wf_r_typable_subtype.
-            - (* Show that extending environment preserves well-typedness *)
-              eapply wf_r_typable_extend_env.
-              exact Hv2_type.
-            - (* Use the subtyping relation H3 *)
-              exact H3. *)
           }
           exact Hsubtype_preserved.
       * (* Case: i ≠ x (unchanged variable) *)
-        unfold runtime_getVal.
-        simpl.
-        (* rewrite update_nth_diff; [| exact Hneq].
-        (* Use original correspondence for unchanged variables *)
-        specialize (Hcorr i Hi sqt Hnth).
-        exact Hcorr. *)
-    admit.
+        {
+          unfold runtime_getVal.
+          simpl.
+          rewrite update_diff.
+          - symmetry. exact Hneq.
+          - assert (Hcorr_orig := Hcorr i Hi sqt Hnth).
+            unfold runtime_getVal in Hcorr_orig.
+            destruct (nth_error (vars rΓ) i) as [v|] eqn:Hval.
+            + destruct v as [|loc].
+              * trivial.
+              * unfold wf_r_typable in Hcorr_orig |- *.
+                destruct (r_type h' loc) as [rqt|] eqn:Hrtype; [|contradiction].
+                destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
+                destruct (r_muttype h' ι') as [q|] eqn:Hmut; [|contradiction].
+                assert (Hthis_preserved : get_this_var_mapping (update x v2 (vars rΓ)) = Some ι').
+                {
+                  unfold get_this_var_mapping in *.
+                  destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+                  - discriminate Hthis.
+                  - destruct x as [|x'].
+                    + contradiction H1. reflexivity.
+                    + simpl. exact Hthis.
+                }
+                rewrite Hthis_preserved.
+                rewrite Hmut.
+                exact Hcorr_orig.
+            + contradiction.
+        }
   - (* Case: stmt = FldWrite *)
     intros.
     inversion H7; subst.
@@ -215,43 +277,111 @@ Proof.
     destruct H6 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) exact Hclass.
-    + (* wellformed heap *) admit.
-    + (* Length of runtime environment greater than 0 *)
-      simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
-      rewrite <- Hlen.
-      exact HsenvLength.
-    +
+    + (* wellformed heap *) 
+    unfold wf_heap in *.
+    intros ι Hdom.
+    unfold update_field in *.
+    destruct (runtime_getObj h lx) as [o_new|] eqn:Hobj.
+    * (* Case: object exists at lx *)
+      destruct (Nat.eq_dec ι lx) as [Heq | Hneq].
+      -- (* Case: ι = lx (the updated object) *)
+        subst ι.
+        injection H12 as Ho_eq.
+        subst o_new.
+        unfold wf_obj.
+        simpl.
+        specialize (Hheap lx).
+        rewrite update_length in Hdom.
+        specialize (Hheap Hdom).
+        unfold wf_obj in Hheap.
+        rewrite Hobj in Hheap.
+        destruct Hheap as [Hrtypeuse [Hlen_fields Hwf_fields]].
+        unfold runtime_getObj.
+        rewrite update_same.
+        ++ exact Hdom.
+        ++ repeat split.
+          ** exact Hrtypeuse.
+          ** simpl. rewrite update_length. exact Hlen_fields.
+          **
+            simpl.
+            admit.
+        -- unfold wf_obj, runtime_getObj.
+        rewrite update_diff.
+        ** rewrite update_length in Hdom.
+          symmetry. exact Hneq.
+        ** 
+        admit.
+        * exfalso.
+        discriminate H12.
+    + destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]]. exact HrEnvLen.
+    + destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]]. exact Hreceiverval.
+    + 
       destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
-      destruct Hreceiverval as [iot Hiot].
-      exists iot.
-      simpl.
-      unfold gget in *.
-      destruct (vars rΓ') as [|v0 vs] eqn:Hvars.
-      * (* Case: vars rΓ = [] *)
-        exfalso.
-        (* rewrite Hvars in HrEnvLen. *)
-        simpl in HrEnvLen.
-        lia.
-      * (* Case: vars rΓ = v0 :: vs *)
-        destruct x as [|x'].
-           (* -- x = 0 contradiction. *)
-           -- (* x = S x' *)
-              exact Hiot.
-           --    (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
-              exact Hiot.
-    + admit.
+      eapply Forall_impl; [| exact Hallvals].
+      intros v Hv.
+      destruct v as [|loc]; [trivial|].
+      unfold update_field in Hv |- *.
+      destruct (runtime_getObj h lx) as [o'|] eqn:Hobj'; [| exact Hv].
+      destruct (Nat.eq_dec loc lx) as [Heq | Hneq].
+      * subst loc. rewrite runtime_getObj_update_same; [trivial | ].
+        apply runtime_getObj_dom in Hobj'. exact Hobj'. trivial.
+      * 
+      unfold runtime_getObj.
+      rewrite update_diff.
+      -- symmetry. exact Hneq.
+      -- auto.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
     + exact Hlen.
     + admit.
   - (* Case: stmt = New *)
     intros.
-    inversion H10; subst.
+    inversion H11; subst.
     unfold wf_r_config in *.
-    destruct H9 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct H10 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) exact Hclass.
-    + (* wellformed heap *) admit.
+    + (* wellformed heap *) 
+    unfold wf_heap.
+    intros ι Hι.
+        rewrite length_app in Hι.
+    simpl in Hι.
+    destruct (Nat.eq_dec ι (dom h)) as [Heq | Hneq].
+    * (* ι = dom h (new object) *)
+      subst.
+      unfold wf_obj.
+      rewrite runtime_getObj_last.
+      split.
+      -- (* wf_rtypeuse for new object *)
+        simpl.
+        unfold wf_rtypeuse.
+        destruct (bound CT C) as [q_c_val|] eqn:Hbound.
+        ++ unfold constructor_sig_lookup in H2.
+        destruct (find_class CT C) as [def|] eqn:Hfind.
+        ** apply find_class_dom in Hfind.
+          exact Hfind.
+        ** exfalso.
+        unfold bound in Hbound.
+        rewrite Hfind in Hbound.
+        discriminate Hbound.
+        ++ 
+          unfold constructor_sig_lookup in H2.
+          destruct (constructor_def_lookup CT C) as [ctor|] eqn:Hctor.
+          ** unfold constructor_def_lookup in Hctor.
+            destruct (find_class CT C) as [def|] eqn:Hfind.
+            --- unfold bound in Hbound.
+              rewrite Hfind in Hbound.
+              discriminate Hbound.
+            --- discriminate Hctor.
+          ** discriminate H2.
+      -- (* field count matches *)
+        simpl.
+        admit.
+    * (* ι < dom h (existing object) *)
+      assert (ι < dom h) by lia.
+      unfold wf_obj.
+      rewrite runtime_getObj_last2; auto.
+      admit. (* apply Hheap; auto. *)
     + (* Length of runtime environment greater than 0 *)
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
       rewrite update_length. rewrite <- Hlen.
@@ -275,16 +405,39 @@ Proof.
               admit.
            --    (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
               exact Hiot.
-    + admit.
+    + 
+    destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+    simpl.
+    apply Forall_update.
+    * eapply Forall_impl; [| exact Hallvals].
+      intros v Hv.
+      destruct v as [|loc]; [trivial|].
+      destruct (runtime_getObj h loc) as [obj|] eqn:Hobj; [| contradiction].
+      assert (Hloc_dom : loc < dom h) by (apply runtime_getObj_dom in Hobj; exact Hobj).
+    rewrite runtime_getObj_last2.
+    -- exact Hloc_dom.
+    -- rewrite Hobj. trivial.
+    * (* Show new object is well-formed *)
+      assert (dom h + 1 = S (dom h)) by lia.
+      unfold runtime_getObj.
+      simpl.
+      assert (Hlen_extended: dom (h ++ [{| rt_type := {| rqtype := qadapted; rctype := C |}; fields_map := vals |}]) = dom h + 1).
+      -- rewrite length_app. simpl. lia.
+      -- rewrite nth_error_app2.
+      ** lia.
+      ** replace (dom h - dom h) with 0 by lia.
+        simpl. reflexivity.
+      * assert (Hx_dom : x < dom sΓ) by (apply static_getType_dom in H0; exact H0).
+      rewrite <- Hlen; exact Hx_dom.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
     + rewrite update_length. rewrite <- Hlen. lia.
     + admit.
   - (* Case: stmt = Call *)
     intros.
-    inversion H8; subst.
+    inversion H9; subst.
     unfold wf_r_config in *.
-    destruct H7 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct H8 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) exact Hclass.
     + admit.
@@ -292,12 +445,90 @@ Proof.
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
       rewrite update_length. rewrite <- Hlen.
       exact HsenvLength.
-    + admit.
-    + admit.
+    + destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+      destruct Hreceiverval as [iot Hiot].
+      exists iot.
+      simpl.
+      unfold gget in *.
+      destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+      * (* Case: vars rΓ = [] *)
+        exfalso.
+        simpl in HrEnvLen.
+        lia.
+      * (* Case: vars rΓ = v0 :: vs *)
+        simpl.
+        destruct x as [|x'].
+      -- (* Case: x = 0 *)
+        (* This should be impossible - method calls shouldn't assign to receiver *)
+        contradiction H4.
+      reflexivity.
+      -- (* Case: x = S x' *)
+        simpl.
+        (* update (S x') retval (v0 :: vs) = v0 :: update x' retval vs *)
+        simpl in Hiot.
+        exact Hiot.
+    + 
+    unfold wf_renv in *.
+    destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+    simpl.
+    apply Forall_update.
+    * (* Show existing values are still well-formed in h' *)
+      eapply Forall_impl; [| exact Hallvals].
+      intros v Hv.
+      destruct v as [|loc]; [trivial|].
+      (* For Iot loc, show runtime_getObj h' loc = Some _ *)
+      (* This follows from heap preservation during method execution *)
+      admit.
+    * (* Show retval is well-formed *)
+      destruct retval as [|loc]; [trivial|].
+      (* retval comes from method execution, so it's well-formed in h' *)
+      (* The return value loc comes from rΓ'' which should be well-formed w.r.t. h' *)
+      assert (Hwf_method_result: wf_renv CT rΓ'' h').
+      {
+        (* This should follow from your evaluation preservation theorem *)
+        (* You need a lemma that method body execution preserves well-formedness *)
+        admit.
+      }
+      unfold wf_renv in Hwf_method_result.
+      destruct Hwf_method_result as [_ [_ Hallvals_method]].
+      (* Use the fact that runtime_getVal rΓ'' (mreturn mbody) = Some (Iot loc) *)
+      assert (Hreturn_bound: mreturn mbody < dom (vars rΓ'')).
+      {
+        apply runtime_getVal_dom in H24.
+        exact H24.
+      }
+      assert (Hretval_wf := Forall_nth_error _ _ _ _ Hallvals_method H24).
+      simpl in Hretval_wf.
+      exact Hretval_wf.
+    * (* x < length (vars rΓ) *)
+      assert (x < dom sΓ) by (apply static_getType_dom in H0; exact H0).
+      rewrite <- Hlen; exact H8.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
     + rewrite update_length. exact Hlen.
-    + admit.
+    + intros i Hi sqt Hsqt.
+    destruct (Nat.eq_dec i x) as [Heq | Hneq].
+    * (* Case: i = x *)
+      subst i.
+      (* rewrite update_same. *)
+      (* Use the fact that retval has the correct type from method execution *)
+      (* This follows from your method typing and evaluation preservation *)
+      admit.
+    * (* Case: i ≠ x *)
+      simpl.
+      unfold runtime_getVal.
+      rewrite update_diff; auto.
+        destruct (nth_error (vars rΓ) i) as [v|] eqn:Hval.
+      -- destruct v as [|loc].
+        ++ trivial.
+        ++ (* Need to show wf_r_typable with updated environment and new heap *)
+        admit.
+      -- (* None case *)
+        assert (Hcorr_i := Hcorr i Hi sqt Hsqt).
+            exfalso.
+        assert (i < dom (vars rΓ)) by (rewrite <- Hlen; exact Hi).
+        apply nth_error_None in Hval.
+        lia.
   - (* Case: stmt = Seq *)
     intros. inversion H1; subst.
     specialize (IHstmt_typing1 rΓ'0 h'0 rΓ h H H3) as IH1.
