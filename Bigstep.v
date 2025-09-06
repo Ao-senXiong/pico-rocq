@@ -62,6 +62,35 @@ Definition can_assign (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (f: var
   | _, _ => false
   end.
 
+Lemma can_assign_immutable_final_false :
+  forall CT rΓ h ι f o,
+    r_muttype h ι = Some (exist _ Imm (or_intror eq_refl)) ->
+    runtime_getObj h ι = Some o ->
+    sf_assignability CT (rctype (rt_type o)) f = Some Final \/
+    sf_assignability CT (rctype (rt_type o)) f = Some RDA ->
+    can_assign CT rΓ h ι f = false.
+Proof.
+  intros.
+  unfold can_assign.
+  rewrite H.
+  unfold r_basetype.
+  rewrite H0.
+  simpl.
+  destruct H1 as [HFinal | HRDA].
+  - (* Case: Final *)
+    rewrite HFinal.
+    simpl.
+    unfold vpa_assignability.
+    simpl.
+    reflexivity.
+  - (* Case: RDA *)
+    rewrite HRDA.
+    simpl.
+    unfold vpa_assignability.
+    simpl.
+    reflexivity.
+Qed.
+
 Definition update_field (h: heap) (ι: Loc) (f: var) (v: value) : heap :=
   match runtime_getObj h ι with
   | None => h
@@ -347,12 +376,12 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
     h'
 
   (* evaluate field write statement *)
-  | SBS_FldWrite: forall CT rΓ h x f y lx o vf v2 h',
+  | SBS_FldWrite: forall rΓ h x f y lx o vf v2 h',
       runtime_getVal rΓ x = Some (Iot lx) ->
       runtime_getObj h lx = Some o ->
       getVal o.(fields_map) f = Some vf ->
       runtime_getVal rΓ y = Some v2 ->
-      can_assign CT rΓ h lx f = true ->
+      (* can_assign CT rΓ h lx f = true -> *) (* Runtime need no check *)
       h' = update_field h lx f v2 ->
       eval_stmt OK rΓ h (SFldWrite x f y) OK rΓ h'
 
@@ -1040,4 +1069,140 @@ Proof.
     }
 Admitted. *)
 
+(* Lemma field_def_preserved_subtype :
+  forall CT C1 C2 f fdef,
+    base_subtype CT C1 C2 ->
+    sf_def CT C2 f = Some fdef ->
+    sf_def CT C1 f = Some fdef.
+Proof.
+  intros CT C1 C2 f fdef Hsubtype Hfield_def.
+  unfold sf_def in *.
+  (* sf_def CT C f = gget (fields CT C) f *)
+  (* fields CT C = collect_fields CT C *)
+  
+  (* The key insight: if C1 <: C2, then collect_fields CT C1 includes all fields from collect_fields CT C2 *)
+  (* This should follow from how inheritance works *)
+  
+  (* We need a lemma about collect_fields and subtyping *)
+  assert (Hfields_include : forall f fdef, 
+    gget (collect_fields CT C2) f = Some fdef ->
+    gget (collect_fields CT C1) f = Some fdef).
+  {
+    intros f0 fdef0 Hfield_C2.
+    (* The proof depends on how collect_fields works with inheritance *)
+    (* If C1 <: C2, then collect_fields CT C1 should include all fields from collect_fields CT C2 *)
 
+    (* We need to use the definition of collect_fields and base_subtype *)
+    (* collect_fields traverses the inheritance hierarchy *)
+    unfold collect_fields in *.
+    unfold collect_fields_fuel in *.
+
+    (* The key insight: base_subtype means C1 is in the inheritance chain of C2 *)
+    (* So when collect_fields_fuel traverses C1's hierarchy, it will eventually reach C2 *)
+    (* and include all fields from C2 *)
+
+    (* This requires induction on the subtyping derivation *)
+    induction Hsubtype.
+    - (* base_refl case: C1 = C2 *)
+      exact Hfield_C2.
+    - (* base_trans case: C1 <: C_mid <: C2 *)
+      (* apply IHHsubtype1.
+      apply IHHsubtype2.
+      exact Hfield_C2. *)
+      admit.
+- (* base_step case: direct inheritance *)
+  assert (HfindC : exists def, find_class CT C = Some def).
+  {
+    (* Since C < dom CT, find_class must succeed *)
+    destruct (find_class CT C) as [def|] eqn:Hfind.
+    - exists def. reflexivity.
+    - exfalso. 
+      unfold find_class in Hfind.
+      apply gget_not_dom in Hfind.
+      lia.
+  }
+  destruct HfindC as [def HfindC].
+  
+  (* Extract the parent relationship *)
+  assert (Hsuper : super (signature def) = Some D).
+  {
+    unfold parent in H1.
+    rewrite HfindC in H1.
+    simpl in H1.
+    exact H1.
+  }
+    unfold gget in *.
+
+  destruct (dom CT) as [|fuel'] eqn:Hfuel.
+  + (* dom CT = 0 - contradiction *)
+    assert (C < 0) by (rewrite <- Hfuel; rewrite <- Hfuel in H; exact H).
+    lia.
+  + simpl.
+    rewrite HfindC.
+    rewrite Hsuper.
+    
+    (* The key insight: we need to extract the right part from Hfield_C2 *)
+    (* Hfield_C2 shows: nth_error (collect_fields_fuel (S fuel') CT D) f0 = Some fdef0 *)
+    (* We need: nth_error (collect_fields_fuel fuel' CT D) f0 = Some fdef0 *)
+    
+    (* Let's unfold collect_fields_fuel in Hfield_C2 *)
+    simpl in Hfield_C2.
+    
+    (* Now Hfield_C2 should have the structure we can work with *)
+    destruct (find_class CT D) as [defD|] eqn:HfindD.
+    * (* D found in CT *)
+      destruct (super (signature defD)) as [parentD|] eqn:HsuperD.
+      -- (* D has a parent *)
+        (* Hfield_C2 now has: nth_error (collect_fields_fuel fuel' CT parentD ++ fields (body defD)) f0 = Some fdef0 *)
+        (* We can use nth_error_app to extract which part contains the field *)
+        destruct (nth_error (collect_fields_fuel fuel' CT parentD) f0) as [fdef_parent|] eqn:Hparent_field.
+        ++ (* Field found in parent - use it directly *)
+          apply nth_error_app1.
+          ** exact Hparent_field.
+          ** apply nth_error_Some. rewrite <- Hparent_field. discriminate.
+        ++ (* Field not in parent, must be in D's own fields *)
+          apply nth_error_app1.
+          ** (* We need to show the field is in collect_fields_fuel fuel' CT D *)
+             (* Since the field is in D's complete field list, and not in parent, *)
+             (* it must be in D's own fields, which are included in collect_fields_fuel fuel' CT D *)
+             simpl. rewrite HfindD. rewrite HsuperD.
+             apply nth_error_app2.
+             --- exact Hparent_field.
+             --- (* Extract from Hfield_C2 that the field is in body fields *)
+                 assert (Hbody_field : nth_error (Syntax.fields (body defD)) (f0 - length (collect_fields_fuel fuel' CT parentD)) = Some fdef0).
+                 {
+                   apply nth_error_app2_inv in Hfield_C2.
+                   - exact Hfield_C2.
+                   - exact Hparent_field.
+                 }
+                 exact Hbody_field.
+          ** apply nth_error_Some. rewrite <- Hfield_C2. discriminate.
+      -- (* D has no parent *)
+        (* Simpler case - field must be in D's own fields *)
+        apply nth_error_app1.
+        ** simpl. rewrite HfindD. rewrite HsuperD. simpl. exact Hfield_C2.
+        ** apply nth_error_Some. rewrite <- Hfield_C2. discriminate.
+    * (* D not found - contradiction *)
+      unfold find_class in HfindD.
+      apply gget_not_dom in HfindD.
+      lia.
+  }
+  
+  apply Hfields_include.
+  exact Hfield_def.
+Qed.
+
+Lemma runtime_static_assignability_consistency :
+  forall CT rΓ h loc Tx C f a qr fields,
+    wf_r_typable CT rΓ h loc Tx ->
+    runtime_getObj h loc = Some (mkObj (mkruntime_type qr C) fields) ->
+    sf_assignability CT (sctype Tx) f = Some a ->
+    base_subtype CT C (sctype Tx) ->
+    sf_assignability CT C f = Some a.
+Proof.
+  intros CT rΓ h loc Tx C f a qr fields Hwf_typable Hruntime_obj Hstatic_assign Hsubtype.
+
+  (* The key insight: field assignability is preserved down the subtyping hierarchy *)
+  (* If C <: sctype Tx, then field f has the same assignability in both *)
+  admit. (* This requires a lemma about field assignability and subtyping *)
+Qed. *)

@@ -27,6 +27,31 @@ Fixpoint mapM {A B : Type} (f : A -> option B) (l : list A) : option (list B) :=
 Definition static_getType_list (sΓ: s_env): list Loc -> option (list qualified_type) :=
   fun l => mapM (fun x => static_getType sΓ x) l.
 
+Lemma static_getType_list_preserves_length : forall sΓ args argtypes,
+  static_getType_list sΓ args = Some argtypes ->
+  dom argtypes = dom args.
+Proof.
+  intros sΓ args argtypes Hstatic.
+  unfold static_getType_list in Hstatic.
+  generalize dependent argtypes.
+  induction args as [|a args' IH]; intros argtypes Hstatic.
+  - (* Base case: args = [] *)
+    simpl in Hstatic.
+    injection Hstatic as Hstatic.
+    subst argtypes.
+    reflexivity.
+  - (* Inductive case: args = a :: args' *)
+    simpl in Hstatic.
+    destruct (static_getType sΓ a) as [T|] eqn:HstaticT; [|discriminate].
+    destruct (mapM (static_getType sΓ) args') as [Ts|] eqn:HstaticTs; [|discriminate].
+    injection Hstatic as Hstatic.
+    subst argtypes.
+    simpl.
+    f_equal.
+    apply IH.
+    reflexivity.
+Qed.
+
 Definition runtime_lookup_list (rΓ: r_env): list Loc -> option (list value) :=
   fun l => mapM (fun x => runtime_getVal rΓ x) l.
 

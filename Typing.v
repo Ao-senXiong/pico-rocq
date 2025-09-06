@@ -27,6 +27,62 @@ collect_fields_fuel (length CT) CT C.
 
 Definition fields := collect_fields.
 
+Lemma collect_fields_fuel_zero : forall CT C,
+  collect_fields_fuel 0 CT C = [].
+Proof.
+  intros CT C.
+  simpl.
+  reflexivity.
+Qed.
+
+Lemma collect_fields_fuel_no_class : forall fuel CT C,
+  find_class CT C = None ->
+  collect_fields_fuel fuel CT C = [].
+Proof.
+  intros fuel CT C Hno_class.
+  destruct fuel as [|fuel'].
+  - simpl. reflexivity.
+  - simpl. rewrite Hno_class. reflexivity.
+Qed.
+
+Lemma collect_fields_fuel_structure : forall fuel' CT C def,
+  find_class CT C = Some def ->
+  collect_fields_fuel (S fuel') CT C = 
+    (match super (signature def) with
+     | Some parent => collect_fields_fuel fuel' CT parent
+     | None => []
+     end) ++ Syntax.fields (body def).
+Proof.
+  intros fuel' CT C def Hfind.
+  simpl. rewrite Hfind. 
+  destruct (super (signature def)) as [parent|].
+  + reflexivity.
+  + simpl. reflexivity.
+Qed.
+
+Lemma collect_fields_fuel_inherits_parent : forall fuel CT C def parent f fdef,
+  find_class CT C = Some def ->
+  super (signature def) = Some parent ->
+  fuel > 0 ->
+  nth_error (collect_fields_fuel fuel CT parent) f = Some fdef ->
+  nth_error (collect_fields_fuel (S fuel) CT C) f = Some fdef.
+Proof.
+  intros fuel CT C def parent f fdef Hfind Hsuper Hfuel Hparent_field.
+  simpl.
+  rewrite Hfind.
+  rewrite Hsuper.
+  (* First prove the length bound *)
+  assert (Hbound : f < length (collect_fields_fuel fuel CT parent)).
+  {
+    apply nth_error_Some.
+    rewrite Hparent_field.
+    discriminate.
+  }
+  rewrite nth_error_app1.
+  - exact Hbound.
+  - exact Hparent_field.
+Qed.
+
 (* Static field def look up; We assume identifiers are globally unique  *)
 Definition sf_def (CT: class_table) (C: class_name) (f: var) : option field_def :=
   gget (fields CT C) f.
@@ -51,6 +107,29 @@ Definition sf_base (CT: class_table) (C: class_name) (f: var) : option class_nam
   | Some fd => Some (f_base_type (ftype fd))
   | None => None
   end.
+
+Lemma field_lookup_deterministic : forall CT C f fdef fdef',
+  sf_def CT C f = Some fdef ->
+  sf_def CT C f = Some fdef' ->
+  fdef = fdef'.
+Proof.
+  intros CT C f fdef fdef' H1 H2.
+  unfold sf_def in *.
+  rewrite H1 in H2.
+  injection H2.
+  auto.
+Qed.
+
+(* Fields collection is deterministic *)
+Lemma collect_fields_deterministic : forall CT C fds fds',
+  collect_fields CT C = fds ->
+  collect_fields CT C = fds' ->
+  fds = fds'.
+Proof.
+  intros CT C fds fds' H1 H2.
+  rewrite H1 in H2.
+  exact H2.
+Qed. 
 
 (* Look up the constructor for a class *)
 Definition constructor_def_lookup (CT : class_table) (C : class_name) : option constructor_def :=
@@ -242,6 +321,44 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       stmt_typing CT sΓ' s2 sΓ'' ->
       stmt_typing CT sΓ (SSeq s1 s2) sΓ''
 .
+
+Lemma new_stmt_args_length : forall CT sΓ x qc C args argtypes n1 consig,
+  stmt_typing CT sΓ (SNew x qc C args) sΓ ->
+  static_getType_list sΓ args = Some argtypes ->
+  constructor_sig_lookup CT C = Some consig ->
+  length consig.(sparams) = n1 ->
+  length consig.(sparams) + length consig.(cparams) = length args.
+Proof.
+  intros CT sΓ x qc C args argtypes n1 consig Htyping Hstatic Hconsig Hn1.
+  inversion Htyping; subst.
+  (* Extract the Forall2 hypotheses *)
+  apply Forall2_length in H15. (* firstn n1 argtypes ~ sparams *)
+  apply Forall2_length in H14. (* skipn n1 argtypes ~ cparams *)
+  rewrite Hconsig in H6.
+  injection H6 as Hconsig_eq.
+  subst consig0.
+  (* Similarly for argtypes *)
+  rewrite Hstatic in H5.
+  injection H5 as Hargtypes_eq.
+  subst argtypes0.
+  (* Now use the length properties from Forall2 *)
+  assert (Hfirstn_skipn : dom (firstn dom (sparams consig) argtypes) + dom (skipn dom (sparams consig) argtypes) = dom argtypes).
+  {
+    rewrite length_firstn.
+    rewrite length_skipn.
+    lia.
+  }
+  rewrite H14 in Hfirstn_skipn.
+  rewrite H15 in Hfirstn_skipn.
+  (* Connect argtypes length with args length *)
+  assert (Hargs_argtypes : dom argtypes = dom args).
+  {
+    apply (static_getType_list_preserves_length sΓ args argtypes).
+    exact Hstatic.  
+  }
+  rewrite -> Hargs_argtypes in Hfirstn_skipn.
+  exact Hfirstn_skipn.
+Qed.
 
 Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop :=
 
