@@ -5,8 +5,206 @@ Import ListNotations.
 
 (* STATIC HELPER FUNCTIONS *)
 
+Inductive CollectFields : class_table -> class_name -> list field_def -> Prop :=
+  (* Base case: class not found *)
+  | CF_NotFound : forall CT C,
+      find_class CT C = None ->
+      CollectFields CT C []
+      
+  (* Base case: Object class (no superclass) *)
+  | CF_Object : forall CT C def,
+      find_class CT C = Some def ->
+      super (signature def) = None ->
+      CollectFields CT C []
+      
+  (* Inductive case: class with superclass *)
+  | CF_Inherit : forall CT C def parent parent_fields own_fields,
+      find_class CT C = Some def ->
+      super (signature def) = Some parent ->
+      CollectFields CT parent parent_fields ->
+      own_fields = Syntax.fields (body def) ->
+      CollectFields CT C (parent_fields ++ own_fields).
+
+(* Field lookup relation *)
+Inductive FieldLookup : class_table -> class_name -> var -> field_def -> Prop :=
+  | FL_Found : forall CT C fields f fdef,
+      CollectFields CT C fields ->
+      gget fields f = Some fdef ->
+      FieldLookup CT C f fdef.
+
+(* Relational versions of your lookup functions *)
+Definition sf_def_rel (CT: class_table) (C: class_name) (f: var) (fdef: field_def) : Prop :=
+  FieldLookup CT C f fdef.
+
+Definition sf_assignability_rel (CT: class_table) (C: class_name) (f: var) (a: a) : Prop :=
+  exists fdef, FieldLookup CT C f fdef /\ assignability (ftype fdef) = a.
+
+Definition sf_mutability_rel (CT: class_table) (C: class_name) (f: var) (q: q_f) : Prop :=
+  exists fdef, FieldLookup CT C f fdef /\ mutability (ftype fdef) = q.
+
+Definition sf_base_rel (CT: class_table) (C: class_name) (f: var) (base: class_name) : Prop :=
+  exists fdef, FieldLookup CT C f fdef /\ f_base_type (ftype fdef) = base.
+  
+(* Key properties of relational field collection *)
+Lemma collect_fields_deterministic_rel : forall CT C fields1 fields2,
+  CollectFields CT C fields1 ->
+  CollectFields CT C fields2 ->
+  fields1 = fields2.
+Proof.
+  intros CT C fields1 fields2 H1 H2.
+  generalize dependent fields2.
+  induction H1; intros fields2 H3; inversion H3; subst.
+  - (* Both not found *) reflexivity.
+  - (* H1: not found, H2: object - contradiction *)
+    reflexivity.
+  - (* H1: not found, H2: inherit - contradiction *)
+    rewrite H in H0. discriminate.
+  - (* H1: object, H2: not found - contradiction *)
+    reflexivity.
+  - (* Both object *)
+    reflexivity.
+  - (* H1: object, H2: inherit - contradiction *)
+    rewrite H in H1. 
+    injection H1 as Heq. subst def0.
+    rewrite H0 in H2. discriminate.
+  - (* H1: inherit, H2: not found - contradiction *)
+    rewrite H in H4. discriminate.
+  - (* H1: inherit, H2: object - contradiction *)
+    rewrite H in H4. injection H4 as Heq. subst def0.
+    rewrite H0 in H5. discriminate.
+  - (* Both inherit *)
+    rewrite H in H4. injection H4 as Heq. subst def0.
+    rewrite H0 in H5. injection H5 as Heq. subst parent0.
+    apply IHCollectFields in H6. subst parent_fields0.
+    reflexivity.
+Qed.
+
+Lemma field_lookup_deterministic_rel : forall CT C f fdef1 fdef2,
+  FieldLookup CT C f fdef1 ->
+  FieldLookup CT C f fdef2 ->
+  fdef1 = fdef2.
+Proof.
+  intros CT C f fdef1 fdef2 H1 H2.
+  inversion H1 as [CT1 C1 fields1 f1 fdef1' Hcf1 Hget1]. subst.
+  inversion H2 as [CT2 C2 fields2 f2 fdef2' Hcf2 Hget2]. subst.
+  apply (collect_fields_deterministic_rel CT C fields1 fields2) in Hcf1; auto.
+  subst. rewrite Hget1 in Hget2. injection Hget2. auto.
+Qed.
+
+Lemma field_inheritance_preserves_type : forall CT C parent def f fdef,
+  find_class CT C = Some def ->
+  super (signature def) = Some parent ->
+  FieldLookup CT parent f fdef ->
+  FieldLookup CT C f fdef.
+Proof.
+  intros CT C parent def f fdef Hfind Hsuper Hparent_lookup.
+  inversion Hparent_lookup as [CT' parent' parent_fields f' fdef' Hparent_cf Hparent_get]. subst.
+  apply FL_Found with (parent_fields ++ Syntax.fields (body def)).
+  - eapply CF_Inherit; eauto.
+  - (* Prove gget (parent_fields ++ Syntax.fields (body def)) f = Some fdef *)
+    unfold gget in *.
+    rewrite nth_error_app1.
+    + apply nth_error_Some. rewrite Hparent_get. discriminate.
+    + exact Hparent_get.
+Qed.
+
+(* Transitive field inheritance via subtyping *)
+Lemma field_inheritance_subtyping : forall CT C D f fdef,
+  base_subtype CT C D ->
+  FieldLookup CT D f fdef ->
+  FieldLookup CT C f fdef.
+Proof.
+  intros CT C D f fdef Hsub Hlookup.
+  induction Hsub.
+  - (* Reflexivity: C = D *)
+    exact Hlookup.
+  - (* Transitivity: C <: E <: D *)
+    apply IHHsub1.
+    apply IHHsub2.
+    exact Hlookup.
+  - (* Direct inheritance: C extends D *)
+    destruct (find_class CT C) as [def|] eqn:Hfind.
+    apply (field_inheritance_preserves_type CT C D def f fdef); auto.
+    unfold parent in H1.
+    rewrite Hfind in H1.
+    simpl in H1.
+    exact H1.
+    unfold parent in H1.
+    rewrite Hfind in H1.
+    discriminate H1.
+Qed.
+
+(* Corollary for all field properties *)
+Lemma sf_def_subtyping : forall CT C D f fdef,
+  base_subtype CT C D ->
+  sf_def_rel CT D f fdef ->
+  sf_def_rel CT C f fdef.
+Proof.
+  intros CT C D f fdef Hsub Hlookup.
+  unfold sf_def_rel in *.
+  apply (field_inheritance_subtyping CT C D f fdef); auto.
+Qed.
+
+Lemma sf_assignability_subtyping : forall CT C D f a,
+  base_subtype CT C D ->
+  sf_assignability_rel CT D f a ->
+  sf_assignability_rel CT C f a.
+Proof.
+  intros CT C D f a Hsub Hlookup.
+  unfold sf_assignability_rel in *.
+  destruct Hlookup as [fdef [Hfield Hassign]].
+  exists fdef. split; auto.
+  apply (sf_def_subtyping CT C D f fdef); auto.
+Qed.
+
+Lemma sf_mutability_subtyping : forall CT C D f q,
+  base_subtype CT C D ->
+  sf_mutability_rel CT D f q ->
+  sf_mutability_rel CT C f q.
+Proof.
+  intros CT C D f q Hsub Hlookup.
+  unfold sf_mutability_rel in *.
+  destruct Hlookup as [fdef [Hfield Hmut]].
+  exists fdef. split; auto.
+  apply (sf_def_subtyping CT C D f fdef); auto.
+Qed.
+
+Lemma sf_base_subtyping : forall CT C D f base,
+  base_subtype CT C D ->
+  sf_base_rel CT D f base ->
+  sf_base_rel CT C f base.
+Proof.
+  intros CT C D f base Hsub Hlookup.
+  unfold sf_base_rel in *.
+  destruct Hlookup as [fdef [Hfield Hbase]].
+  exists fdef. split; auto.
+  apply (sf_def_subtyping CT C D f fdef); auto.
+Qed.
+
+Lemma sf_assignability_deterministic_rel : forall CT C f a1 a2,
+  sf_assignability_rel CT C f a1 ->
+  sf_assignability_rel CT C f a2 ->
+  a1 = a2.
+Proof.
+  intros CT C f a1 a2 H1 H2.
+  unfold sf_assignability_rel in H1, H2.
+  destruct H1 as [fdef1 [Hlookup1 Hassign1]].
+  destruct H2 as [fdef2 [Hlookup2 Hassign2]].
+  
+  (* Use field lookup determinism *)
+  assert (Hfdef_eq: fdef1 = fdef2).
+  {
+    eapply field_lookup_deterministic_rel; eauto.
+  }
+  subst fdef2.
+  
+  (* Now assignability (ftype fdef1) = a1 and assignability (ftype fdef1) = a2 *)
+  rewrite -> Hassign1 in Hassign2.
+  exact Hassign2.
+Qed.
+
 (* Collect fields of a class and its superclasses, with fuel to prevent infinite loops *)
-Fixpoint collect_fields_fuel (fuel : nat) (CT : class_table) (C : class_name) : list field_def :=
+(* Fixpoint collect_fields_fuel (fuel : nat) (CT : class_table) (C : class_name) : list field_def :=
   match fuel with
   | O => []
   | S fuel' =>
@@ -129,7 +327,7 @@ Proof.
   intros CT C fds fds' H1 H2.
   rewrite H1 in H2.
   exact H2.
-Qed. 
+Qed.  *)
 
 (* Look up the constructor for a class *)
 Definition constructor_def_lookup (CT : class_table) (C : class_name) : option constructor_def :=
@@ -240,7 +438,7 @@ Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop
   | ET_Field : forall CT Γ x T fDef f,
       wf_senv CT Γ ->
       static_getType Γ x = Some T ->
-      sf_def CT (sctype T) f = Some fDef ->
+      sf_def_rel CT (sctype T) f fDef ->
       expr_has_type CT Γ (EField x f) (vpa_type_to_type T (Build_qualified_type (q_f_proj (mutability (ftype fDef))) (f_base_type (ftype fDef))))
 .
 
@@ -273,8 +471,8 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType sΓ y = Some Ty ->
-      sf_def CT (sctype Tx) f = Some fieldT ->
-      sf_assignability CT (sctype Tx) f = Some a ->
+      sf_def_rel CT (sctype Tx) f fieldT ->
+      sf_assignability_rel CT (sctype Tx) f a ->
       (* TODO: define a helper method to get the adapated type *)
       qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Tx) (Build_qualified_type (q_f_proj (mutability (ftype fieldT))) (f_base_type (ftype fieldT)))) ->
       vpa_assignability (sqtype Tx) a = Assignable ->
@@ -410,8 +608,8 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
     (* Parameter types are wellformed *)
     Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (sparams sig) ->
     Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (cparams sig) ->
-    fields CT superclass_name = super_fields_def -> (* This class has fields *)
-    fields CT C = this_fields_def -> (* This class has fields *)
+    CollectFields CT superclass_name super_fields_def -> (* This class has fields *)
+    CollectFields CT C this_fields_def -> (* This class has fields *)
     let body := cbody ctor in
     let list_assignment := assignments body in
     let this_fields := map fname this_fields_def in
@@ -424,10 +622,14 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
     (* 3. Assignment preserve subtyping *)
     let ctypes := cparams sig in 
     Forall (fun '(f1, f2) =>
-    match sf_mutability CT C f1, sf_base CT C f1, nth_error ctypes f2 with
-    | Some mf, Some Cf, Some T2 => qualified_type_subtype CT (vpa_qualified_type (q_c_proj q_c) (Build_qualified_type (q_f_proj mf) Cf)) (vpa_qualified_type (q_c_proj q_c) T2)
-    | _, _, _ => False
-    end) list_assignment ->
+  exists mf Cf T2,
+    sf_mutability_rel CT C f1 mf /\
+    sf_base_rel CT C f1 Cf /\
+    nth_error ctypes f2 = Some T2 /\
+    qualified_type_subtype CT 
+      (vpa_qualified_type (q_c_proj q_c) (Build_qualified_type (q_f_proj mf) Cf)) 
+      (vpa_qualified_type (q_c_proj q_c) T2)
+) list_assignment ->
     (* 4 Constructor supercall wellformed *)
     (* 4.1 Bound compatibility *)
     bound CT superclass_name = Some super_bound ->
@@ -524,11 +726,13 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   let qC := class_qualifier sig in
   wf_constructor CT C (constructor bod) /\
   Forall (wf_method CT C) (methods bod) /\
-  match bound CT superC, fields CT C with
-    | Some q_super, fs =>
-        vpa_mutabilty (q_c_proj qC) (q_c_proj q_super) = q_c_proj qC /\ Forall (wf_field CT) fs
-    | None, [] => True
-    | None, _ => False
+  match bound CT superC with
+  | Some q_super => 
+      exists fs, CollectFields CT C fs /\
+      vpa_mutabilty (q_c_proj qC) (q_c_proj q_super) = q_c_proj qC /\ 
+      Forall (wf_field CT) fs
+  | None => 
+      CollectFields CT C []
   end
   ->
   wf_class CT cdef

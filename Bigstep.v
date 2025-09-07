@@ -42,10 +42,10 @@ Definition r_type (h: heap) (ι: Loc) : option runtime_type :=
   end.
 
 (* Determine whether an assignment should be allowed *)
-Definition can_assign (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (f: var) : bool :=
+(* Definition can_assign (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (f: var) : bool :=
   match r_muttype h ι, r_basetype h ι with
   | Some q, Some c =>
-    match sf_assignability CT c f with
+    match sf_assignability_rel CT c f with
     | Some a =>
         (* match rΓ.(init_state), vpa_assignability (q_r_proj q) a with
         (* | initing, _ => true *)
@@ -89,7 +89,7 @@ Proof.
     unfold vpa_assignability.
     simpl.
     reflexivity.
-Qed.
+Qed. *)
 
 Definition update_field (h: heap) (ι: Loc) (f: var) (v: value) : heap :=
   match runtime_getObj h ι with
@@ -127,7 +127,7 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
       (* The runtime type of the object is well-formed *)
       wf_rtypeuse CT (rt_type o).(rqtype) (rt_type o).(rctype) /\
       (* All field values are well-formed and have correct types *)
-      let field_defs := collect_fields CT (rt_type o).(rctype) in
+      exists field_defs, CollectFields CT (rt_type o).(rctype) field_defs /\
       List.length (fields_map o) = List.length field_defs /\
       Forall2 (fun v fdef => 
         match v with
@@ -175,6 +175,8 @@ Definition wf_r_typable (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (sqt:
     match r_muttype h ι' with
     | Some q =>
       qualified_type_subtype CT (runtime_type_to_qualified_type rqt) (vpa_qualified_type (q_r_proj q) sqt) 
+      \/ (vpa_qualified_type (q_r_proj q) sqt).(sqtype) = Lost 
+      (* \/ (vpa_qualified_type (q_r_proj q) sqt).(sqtype) = Bot *)
     | _ => False
     end  
   | _, _ => False
@@ -190,7 +192,7 @@ Proof.
 Qed.
 
 (* If a heap location is typable by T, its runtime object's base type must be a subtype of T0 *)
-Lemma r_obj_subtype_sqt :
+(* Lemma r_obj_subtype_sqt :
   forall CT rΓ h ι sqt o rt,
     wf_stypeuse CT (sqtype sqt) (sctype sqt) ->
     wf_r_typable CT rΓ h ι sqt ->
@@ -212,16 +214,17 @@ Proof.
     destruct mthis as [ι'|].
     + 
       destruct (r_muttype h ι') as [q|] eqn:Hmuttype.
+      destruct Hwf as [Hsubtype | [HLost | HBot]].
       * 
-        apply qualified_type_subtype_base_subtype with (CT := CT) in Hwf.
+        apply qualified_type_subtype_base_subtype with (CT := CT) in Hsubtype.
           intro Heq.
           unfold r_type in Hr_type.
           rewrite Hbasetype in Hr_type.
           injection Hr_type as Hrqt.
           rewrite <- Heq.
           rewrite <- Hrqt.
-          rewrite vpa_qualified_type_sctype in Hwf.
-          exact Hwf.
+          rewrite vpa_qualified_type_sctype in Hsubtype.
+          exact Hsubtype.
           unfold runtime_type_to_qualified_type, sctype.
           simpl.
           unfold r_type in Hr_type.
@@ -254,7 +257,7 @@ Proof.
   - 
     exfalso. (* r_type should not be None if r_basetype is Some *)
     auto.
-Qed.
+Qed. *)
 
 
 (* Wellformed Runtime Config: if (1) heap is well formed (2) static env is well formed (3) runtime env is well formed (4) the static env and run time env corresponds  *)
@@ -548,11 +551,28 @@ Proof.
   destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
   destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
   destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
-  eapply qtype_trans; eauto.
-  apply vpa_qualified_type_preserves_subtype.
-  - apply q_r_proj_imm_or_mut.
-  - exact Hsub.
-Qed.
+  destruct Hwf as [Hwf_sub | Hwf_lost].
+  - (* Case: subtyping relation *)
+    left.
+    eapply qtype_trans; [exact Hwf_sub |].
+    apply vpa_qualified_type_preserves_subtype.
+    + apply q_r_proj_imm_or_mut.
+    + exact Hsub.
+  - (* Case: Lost *)
+    right. 
+    unfold vpa_qualified_type in *.
+    destruct T1 as [q1 c1], T2 as [q2 c2].
+    simpl in *.
+    unfold vpa_mutabilty in Hwf_lost |- *.
+    admit.
+    (* exact Hwf_lost.
+    destruct (q_r_proj q) eqn:Hqproj.
+    assert (Hq1_lost : q1 = Lost).
+    {
+      destruct q1; simpl in Hwf_lost; try discriminate; reflexivity.
+    }
+    subst q1. *)
+Admitted.
 
 Lemma Forall2_nth_error_prop : forall {A B : Type} (P : A -> B -> Prop) (l1 : list A) (l2 : list B) (n : nat) (a : A) (b : B),
   Forall2 P l1 l2 ->
@@ -761,7 +781,7 @@ Qed.
 
 (* Expression Evaluation Preservation *)
 (* AOSEN: this is somehow wrong in PICO because x.f could be readonly |> RDM = Lost, which is not compatiable with the value mut/imm *)
-Lemma expr_eval_preservation : forall CT sΓ rΓ h e v rΓ' h' T,
+(* Lemma expr_eval_preservation : forall CT sΓ rΓ h e v rΓ' h' T,
   wf_r_config CT sΓ rΓ h ->
   expr_has_type CT sΓ e T ->
   eval_expr OK rΓ h e v OK rΓ' h' ->
@@ -946,7 +966,7 @@ destruct (runtime_getObj h loc) as [o_loc|] eqn:Hloc_obj.
 * (* loc doesn't exist in heap - contradiction *)
   exfalso.
   exact Hforall2.
-Admitted.
+Admitted. *)
 
 (* Lemma new_object_wf_r_typable : forall CT sΓ rΓ h x qc C qthisr qadapted sqt vals l1 vs,
   x <> 0 ->
