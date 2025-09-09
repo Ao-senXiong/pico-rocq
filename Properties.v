@@ -19,9 +19,6 @@ Proof.
   generalize dependent h. generalize dependent rΓ.
   generalize dependent h'. generalize dependent rΓ'.
   induction H0.
-  (* 6: { intros. inversion H9; subst. induction H23. 
-  8: { eapply IHeval_stmt; eauto. exact H21. } 
-  } *)
   - (* Case: stmt = Skip *)
     intros.
     inversion H1; subst.
@@ -313,6 +310,8 @@ Proof.
                 discriminate Hthis.
           - admit.
           - admit. 
+          - admit.
+          - admit.
           }
           exact Hsubtype_preserved.
       * (* Case: i ≠ x (unchanged variable) *)

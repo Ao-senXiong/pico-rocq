@@ -62,6 +62,7 @@ Inductive qualified_type_subtype : class_table -> qualified_type -> qualified_ty
       qualified_type_subtype CT qt1 qt3
   | qtype_refl: forall CT qt,
       (sctype qt) < (dom CT) ->
+      sqtype qt <> Lost ->
       qualified_type_subtype CT qt qt.
 
 Lemma qualified_type_subtype_dom2 :
@@ -97,4 +98,31 @@ Proof.
     - 
 			intros. apply base_refl.
 			exact H.
+Qed.
+
+Lemma qualified_type_subtype_q_subtype :
+  forall CT qt1 qt2,
+    qualified_type_subtype CT qt1 qt2 ->
+    (sctype qt1) < (dom CT) ->
+    (sctype qt2) < (dom CT) ->
+    q_subtype (sqtype qt1) (sqtype qt2).
+Proof.
+  intros CT qt1 qt2 H.
+  induction H.
+  - (* qtype_sub case *)
+    intros. exact H1.
+  - (* qtype_trans case *)
+  intros Hf1 Hf3.
+  apply qualified_type_subtype_dom2 in H as Hf2.
+  pose proof IHqualified_type_subtype1 Hf1 Hf2 as Q1.
+  pose proof IHqualified_type_subtype2 Hf2 Hf3 as Q2.
+  exact (q_subtype_trans _ _ _ Q1 Q2).  
+  - (* qtype_refl case *)
+    intros. 
+    destruct qt as [q c]; simpl.
+    destruct q; try (apply q_refl; discriminate).
+    exfalso.
+    simpl in H0.
+    apply H0.
+    reflexivity.
 Qed.

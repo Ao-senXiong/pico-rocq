@@ -134,6 +134,22 @@ Proof.
     discriminate H1.
 Qed.
 
+Lemma field_def_consistent_through_subtyping : forall CT C D f fdef1 fdef2,
+  base_subtype CT C D ->
+  FieldLookup CT C f fdef1 ->
+  FieldLookup CT D f fdef2 ->
+  fdef1 = fdef2.
+Proof.
+  intros CT C D f fdef1 fdef2 Hsub Hlookup1 Hlookup2.
+  (* Use field inheritance: since C <: D, field f in D is also in C *)
+  assert (Hlookup2_in_C : FieldLookup CT C f fdef2).
+  {
+    apply (field_inheritance_subtyping CT C D f fdef2); assumption.
+  }
+  (* Now both lookups are in C, so use determinism *)
+  eapply field_lookup_deterministic_rel; eauto.
+Qed.
+
 (* Corollary for all field properties *)
 Lemma sf_def_subtyping : forall CT C D f fdef,
   base_subtype CT C D ->
