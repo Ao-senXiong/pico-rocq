@@ -262,8 +262,8 @@ Qed. *)
 
 (* Wellformed Runtime Config: if (1) heap is well formed (2) static env is well formed (3) runtime env is well formed (4) the static env and run time env corresponds  *)
 Definition wf_r_config (CT: class_table) (sΓ: s_env) (rΓ: r_env) (h: heap)  : Prop :=
-  (* class_def in CT are wellformed  *)
-  Forall (wf_class CT) CT /\
+  (* class_def in CT are wellformed  TODO: change this to wellformed ty*)
+  wf_class_table CT /\
   (* Heap is well-formed *)
   wf_heap CT h /\
   (* Runtime environment is well-formed *)
@@ -580,15 +580,33 @@ Proof.
 -- left; exact H2.
 Qed.
 
+Lemma r_type_dom : forall h loc rqt,
+  r_type h loc = Some rqt ->
+  loc < dom h.
+Proof.
+  intros h loc rqt H.
+  unfold r_type in H.
+  destruct (runtime_getObj h loc) as [o|] eqn:Hobj.
+  - (* Some case *)
+    unfold runtime_getObj in Hobj.
+    apply nth_error_Some.
+    rewrite Hobj.
+    discriminate.
+  - (* None case *)
+    simpl in H.
+    discriminate H.
+Qed.
+
 (* Subtyping Preservation for wf_r_typable *)
 Lemma wf_r_typable_subtype : forall CT rΓ h loc T1 T2,
   sctype T1 < dom CT ->
   sctype T2 < dom CT ->
+  wf_heap CT h ->
   wf_r_typable CT rΓ h loc T1 ->
   qualified_type_subtype CT T1 T2 ->
   wf_r_typable CT rΓ h loc T2.
 Proof.
-  intros CT rΓ h loc T1 T2 Hc1dom Hc2dom Hwf Hsub.
+  intros CT rΓ h loc T1 T2 Hc1dom Hc2dom hwfheap Hwf Hsub.
   unfold wf_r_typable in *.
   destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
   destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
@@ -601,34 +619,6 @@ Proof.
     + apply q_r_proj_imm_or_mut.
     + exact Hsub.
   - (* Case: Lost *)
-    (* left.
-    {
-      destruct Hwf_lost as [Hwf_lost_eq Hbasetype].
-      eapply qtype_trans.
-      - (* First: runtime_type_to_qualified_type rqt <: vpa_qualified_type (q_r_proj q) T1 *)
-        apply qtype_sub.
-        + (* Domain constraint for runtime type *)
-          unfold runtime_type_to_qualified_type. 
-          destruct rqt as [rq rc]. simpl.
-          (* Need to show rc < dom CT *)
-          (* This should follow from well-formedness of the heap/runtime type *)
-          admit.
-        + (* Domain constraint for adapted T1 *)
-          unfold vpa_qualified_type. 
-          destruct T1 as [q1 c1]. simpl. exact Hc1dom.
-        + (* Qualifier subtyping: q_r_proj (rqtype rqt) ⊑ Lost *)
-          unfold runtime_type_to_qualified_type.
-          destruct rqt as [rq rc]. simpl.
-          admit.
-        + (* Base type subtyping: rctype rqt <: sctype T1 *)
-          unfold runtime_type_to_qualified_type.
-          destruct rqt as [rq rc]. simpl. exact Hbasetype.
-      - (* Second: vpa_qualified_type (q_r_proj q) T1 <: vpa_qualified_type (q_r_proj q) T2 *)
-        apply vpa_qualified_type_preserves_subtype.
-        + apply q_r_proj_imm_or_mut.
-        + exact Hsub.
-    } *)
-
     unfold vpa_qualified_type in *.
     destruct T1 as [q1 c1], T2 as [q2 c2].
     simpl in *.
@@ -648,31 +638,6 @@ Proof.
       right; (* Default case *)
       split; [reflexivity | eapply base_trans; [exact Hbasetype | exact Hc_sub]]
     end).
-    (* 19:
-     {
-      left.
-      eapply qtype_trans.
-      + (* runtime_type_to_qualified_type rqt <: vpa_qualified_type qr T1 *)
-        apply qtype_sub.
-        * unfold runtime_type_to_qualified_type.
-          destruct rqt as [rq rc]. simpl. admit.
-        * unfold vpa_qualified_type. simpl. exfalso.
-          destruct Hwf_lost as [Hmut_eq_lost _].
-          discriminate Hmut_eq_lost.
-        * unfold runtime_type_to_qualified_type. destruct rqt as [rq rc]. simpl.
-          destruct Hwf_lost as [Hwf_lost_eq _]. discriminate Hwf_lost_eq.
-        * unfold runtime_type_to_qualified_type. destruct rqt as [rq rc]. simpl.
-          destruct Hwf_lost as [_ Hbasetype]. eapply base_trans.
-        - exact Hbasetype.
-        - apply (qualified_type_subtype_base_subtype CT {| sqtype := Mut; sctype := c1 |} {| sqtype := Rd; sctype := c2 |}).
-        -- exact Hsub.
-        -- exact Hc1dom.
-        -- exact Hc2dom.
-      + (* vpa_qualified_type qr T1 <: vpa_qualified_type qr {| sqtype := Rd; sctype := c2 |} *)
-        apply qtype_refl.
-        - exact Hc2dom.
-        - discriminate.
-    } *)
 
     all: have hest := Hqr_cases. 
     all: try discriminate Hwf_lost.
@@ -699,54 +664,279 @@ Proof.
       apply H;
       reflexivity
     end).
-
-    1:
     {
       eapply qtype_trans.
       - (* runtime_type_to_qualified_type rqt <: {| sqtype := Lost; sctype := c2 |} *)
         apply qtype_sub.
         + (* Domain constraint for runtime type *)
           unfold runtime_type_to_qualified_type.
-          destruct rqt as [rq rc]. simpl. admit. (* Need rc < dom CT from heap well-formedness *)
+          destruct rqt as [rq rc]. simpl. 
+          assert (Hloc_dom : loc < dom h).
+          {
+            apply (r_type_dom h loc {| rqtype := rq; rctype := rc |}).
+            exact Hrtype.
+          }
+          unfold wf_heap in hwfheap.
+          specialize (hwfheap loc Hloc_dom).
+          unfold wf_obj in hwfheap.
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [o|] eqn:Hobj.
+          * (* Some case *)
+            simpl in Hrtype.
+            injection Hrtype as Heq.
+            (* subst rq rc. *)
+            destruct hwfheap as [Hwf_rtypeuse _].
+            unfold wf_rtypeuse in Hwf_rtypeuse.
+            rewrite Heq in Hwf_rtypeuse.
+            simpl in Hwf_rtypeuse.
+            destruct (bound CT rc) as [qc|] eqn:Hbound.
+            -- (* Some case: bound CT rc = Some qc *)
+              exact Hwf_rtypeuse.
+            -- (* None case: bound CT rc = None *)
+              contradiction Hwf_rtypeuse.
+          * (* None case *)
+            simpl in Hrtype.
+            discriminate Hrtype.
         + (* Domain constraint for Lost type *)
-          admit.
+        apply (qualified_type_subtype_dom2 CT {| sqtype := Lost; sctype := c2 |}).
+        exact Hsub.
         + (* Qualifier subtyping: q_r_proj rq ⊑ Lost *)
           unfold runtime_type_to_qualified_type.
           destruct rqt as [rq rc]. simpl.
-          admit.
-          (* apply q_rd. Any qualifier is subtype of Rd, but we need Lost here - this might need adjustment *)
+          apply q_rd.
         + (* Base type subtyping: rctype rqt <: c2 *)
           unfold runtime_type_to_qualified_type.
           destruct rqt as [rq rc]. simpl.
-          admit.
-          (* exact Hbasetype. *)
+          exact Hbasetype.
       - (* {| sqtype := Lost; sctype := c2 |} <: {| sqtype := Rd; sctype := c2 |} *)
-        exact Hsub.
-    }
-
-     (* {
-      eapply qtype_trans.
-      + (* runtime_type_to_qualified_type rqt <: vpa_qualified_type qr T1 *)
-        apply qtype_sub.
-        * unfold runtime_type_to_qualified_type.
-          destruct rqt as [rq rc]. simpl. admit.
-        * unfold vpa_qualified_type. simpl. unfold sctype. admit.
-        * unfold runtime_type_to_qualified_type. destruct rqt as [rq rc]. simpl.
-          destruct Hwf_lost as [Hwf_lost_eq _]. admit.
-        * unfold runtime_type_to_qualified_type. destruct rqt as [rq rc]. simpl.
-          eapply base_trans.
-        - exact Hbasetype.
-        - apply (qualified_type_subtype_base_subtype CT {| sqtype := Mut; sctype := c1 |} {| sqtype := Rd; sctype := c2 |}).
-        -- exact Hsub.
-        -- exact Hc1dom.
-        -- exact Hc2dom.
-      + (* vpa_qualified_type qr T1 <: vpa_qualified_type qr {| sqtype := Rd; sctype := c2 |} *)
         apply qtype_refl.
-        - exact Hc2dom.
-        - discriminate.
-    } *)
-    
-Admitted.
+        exact H.
+        simpl.
+        discriminate.
+    }
+    3:{
+      eapply qtype_trans.
+      - (* runtime_type_to_qualified_type rqt <: {| sqtype := Lost; sctype := c2 |} *)
+        apply qtype_sub.
+        + (* Domain constraint for runtime type *)
+          unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl. 
+          assert (Hloc_dom : loc < dom h).
+          {
+            apply (r_type_dom h loc {| rqtype := rq; rctype := rc |}).
+            exact Hrtype.
+          }
+          unfold wf_heap in hwfheap.
+          specialize (hwfheap loc Hloc_dom).
+          unfold wf_obj in hwfheap.
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [o|] eqn:Hobj.
+          * (* Some case *)
+            simpl in Hrtype.
+            injection Hrtype as Heq.
+            (* subst rq rc. *)
+            destruct hwfheap as [Hwf_rtypeuse _].
+            unfold wf_rtypeuse in Hwf_rtypeuse.
+            rewrite Heq in Hwf_rtypeuse.
+            simpl in Hwf_rtypeuse.
+            destruct (bound CT rc) as [qc|] eqn:Hbound.
+            -- (* Some case: bound CT rc = Some qc *)
+              exact Hwf_rtypeuse.
+            -- (* None case: bound CT rc = None *)
+              contradiction Hwf_rtypeuse.
+          * (* None case *)
+            simpl in Hrtype.
+            discriminate Hrtype.
+        + (* Domain constraint for Lost type *)
+        apply (qualified_type_subtype_dom2 CT {| sqtype := Lost; sctype := c2 |}).
+        exact Hsub.
+        + (* Qualifier subtyping: q_r_proj rq ⊑ Lost *)
+          unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          apply q_rd.
+        + (* Base type subtyping: rctype rqt <: c2 *)
+          unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          exact Hbasetype.
+      - (* {| sqtype := Lost; sctype := c2 |} <: {| sqtype := Rd; sctype := c2 |} *)
+        apply qtype_refl.
+        exact H.
+        simpl.
+        discriminate.
+    }
+    {
+      eapply qtype_trans.
+      - (* runtime_type_to_qualified_type rqt <: {| sqtype := Lost; sctype := c1 |} *)
+        apply qtype_sub.
+        + (* Domain constraint for runtime type *)
+          unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          assert (Hloc_dom : loc < dom h).
+          {
+            apply (r_type_dom h loc {| rqtype := rq; rctype := rc |}).
+            exact Hrtype.
+          }
+          unfold wf_heap in hwfheap.
+          specialize (hwfheap loc Hloc_dom).
+          unfold wf_obj in hwfheap.
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [o|] eqn:Hobj.
+          * simpl in Hrtype.
+            injection Hrtype as Heq.
+            destruct hwfheap as [Hwf_rtypeuse _].
+            unfold wf_rtypeuse in Hwf_rtypeuse.
+            rewrite Heq in Hwf_rtypeuse.
+            simpl in Hwf_rtypeuse.
+            destruct (bound CT rc) as [qc|] eqn:Hbound.
+            -- exact Hwf_rtypeuse.
+            -- contradiction Hwf_rtypeuse.
+          * simpl in Hrtype. discriminate Hrtype.
+        + apply (qualified_type_subtype_dom2 CT {| sqtype := Lost; sctype := c1 |}).
+        exact Hsub.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          apply q_rd.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          eapply base_trans.
+          * exact Hbasetype.
+          * exact Hc_sub.
+      - (* {| sqtype := Lost; sctype := c1 |} <: {| sqtype := Rd; sctype := c2 |} *)
+        apply qtype_refl.
+        exact Hc2dom.
+        simpl.
+        discriminate.
+    }
+        {
+      eapply qtype_trans.
+      - (* runtime_type_to_qualified_type rqt <: {| sqtype := Lost; sctype := c1 |} *)
+        apply qtype_sub.
+        + (* Domain constraint for runtime type *)
+          unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          assert (Hloc_dom : loc < dom h).
+          {
+            apply (r_type_dom h loc {| rqtype := rq; rctype := rc |}).
+            exact Hrtype.
+          }
+          unfold wf_heap in hwfheap.
+          specialize (hwfheap loc Hloc_dom).
+          unfold wf_obj in hwfheap.
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [o|] eqn:Hobj.
+          * simpl in Hrtype.
+            injection Hrtype as Heq.
+            destruct hwfheap as [Hwf_rtypeuse _].
+            unfold wf_rtypeuse in Hwf_rtypeuse.
+            rewrite Heq in Hwf_rtypeuse.
+            simpl in Hwf_rtypeuse.
+            destruct (bound CT rc) as [qc|] eqn:Hbound.
+            -- exact Hwf_rtypeuse.
+            -- contradiction Hwf_rtypeuse.
+          * simpl in Hrtype. discriminate Hrtype.
+        + apply (qualified_type_subtype_dom2 CT {| sqtype := Lost; sctype := c1 |}).
+        exact Hsub.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          apply q_rd.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          eapply base_trans.
+          * exact Hbasetype.
+          * exact Hc_sub.
+      - (* {| sqtype := Lost; sctype := c1 |} <: {| sqtype := Rd; sctype := c2 |} *)
+        apply qtype_refl.
+        exact Hc2dom.
+        simpl.
+        discriminate.
+    }
+        {
+      eapply qtype_trans.
+      - (* runtime_type_to_qualified_type rqt <: {| sqtype := Lost; sctype := c1 |} *)
+        apply qtype_sub.
+        + (* Domain constraint for runtime type *)
+          unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          assert (Hloc_dom : loc < dom h).
+          {
+            apply (r_type_dom h loc {| rqtype := rq; rctype := rc |}).
+            exact Hrtype.
+          }
+          unfold wf_heap in hwfheap.
+          specialize (hwfheap loc Hloc_dom).
+          unfold wf_obj in hwfheap.
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [o|] eqn:Hobj.
+          * simpl in Hrtype.
+            injection Hrtype as Heq.
+            destruct hwfheap as [Hwf_rtypeuse _].
+            unfold wf_rtypeuse in Hwf_rtypeuse.
+            rewrite Heq in Hwf_rtypeuse.
+            simpl in Hwf_rtypeuse.
+            destruct (bound CT rc) as [qc|] eqn:Hbound.
+            -- exact Hwf_rtypeuse.
+            -- contradiction Hwf_rtypeuse.
+          * simpl in Hrtype. discriminate Hrtype.
+        + apply (qualified_type_subtype_dom2 CT {| sqtype := Lost; sctype := c1 |}).
+        exact Hsub.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          apply q_rd.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          eapply base_trans.
+          * exact Hbasetype.
+          * exact Hc_sub.
+      - (* {| sqtype := Lost; sctype := c1 |} <: {| sqtype := Rd; sctype := c2 |} *)
+        apply qtype_refl.
+        exact Hc2dom.
+        simpl.
+        discriminate.
+    }
+        {
+      eapply qtype_trans.
+      - (* runtime_type_to_qualified_type rqt <: {| sqtype := Lost; sctype := c1 |} *)
+        apply qtype_sub.
+        + (* Domain constraint for runtime type *)
+          unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          assert (Hloc_dom : loc < dom h).
+          {
+            apply (r_type_dom h loc {| rqtype := rq; rctype := rc |}).
+            exact Hrtype.
+          }
+          unfold wf_heap in hwfheap.
+          specialize (hwfheap loc Hloc_dom).
+          unfold wf_obj in hwfheap.
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [o|] eqn:Hobj.
+          * simpl in Hrtype.
+            injection Hrtype as Heq.
+            destruct hwfheap as [Hwf_rtypeuse _].
+            unfold wf_rtypeuse in Hwf_rtypeuse.
+            rewrite Heq in Hwf_rtypeuse.
+            simpl in Hwf_rtypeuse.
+            destruct (bound CT rc) as [qc|] eqn:Hbound.
+            -- exact Hwf_rtypeuse.
+            -- contradiction Hwf_rtypeuse.
+          * simpl in Hrtype. discriminate Hrtype.
+        + apply (qualified_type_subtype_dom2 CT {| sqtype := Lost; sctype := c1 |}).
+        exact Hsub.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          apply q_rd.
+        + unfold runtime_type_to_qualified_type.
+          destruct rqt as [rq rc]. simpl.
+          eapply base_trans.
+          * exact Hbasetype.
+          * exact Hc_sub.
+      - (* {| sqtype := Lost; sctype := c1 |} <: {| sqtype := Rd; sctype := c2 |} *)
+        apply qtype_refl.
+        exact Hc2dom.
+        simpl.
+        discriminate.
+    }
+Qed.
 
 Lemma Forall2_nth_error_prop : forall {A B : Type} (P : A -> B -> Prop) (l1 : list A) (l2 : list B) (n : nat) (a : A) (b : B),
   Forall2 P l1 l2 ->
@@ -953,8 +1143,64 @@ Proof.
   induction H; [reflexivity | simpl; f_equal; assumption].
 Qed.
 
+Lemma Forall_nth_error_wf_class : forall CT CT' C def,
+  Forall (wf_class CT) CT' ->
+  find_class CT' C = Some def ->
+  wf_class CT def.
+Proof.
+  intros CT CT' C def Hforall Hfind.
+  generalize dependent C.
+  induction CT' as [|cdef CT'' IH]; intros C Hfind.
+  - simpl in Hfind.   exfalso.
+  destruct C; simpl in Hfind; discriminate.
+  - simpl in Hfind.
+    destruct C as [|C'].
+    + injection Hfind as Heq. subst def.
+      inversion Hforall; subst.
+      exact H1.
+    + inversion Hforall; subst.
+    apply IH with (C := C').
+    * exact H2.
+    * exact Hfind.
+Qed.
+
+Lemma find_class_wf_class : forall CT C def,
+  wf_class_table CT ->
+  find_class CT C = Some def ->
+  wf_class CT def.
+Proof.
+  intros CT C def Hwf_ct Hfind.
+  unfold wf_class_table in Hwf_ct.
+  (* Use induction on CT to find the class at position C *)
+  generalize dependent C.
+  induction CT as [|cdef CT' IH]; intros C Hfind.
+  - (* Empty CT case *)
+  exfalso.
+  destruct C; simpl in Hfind; discriminate.
+
+  - (* Non-empty CT case *)
+    simpl in Hfind.
+    destruct C as [|C'].
+    + (* C = 0, so def = cdef *)
+      injection Hfind as Heq. subst def.
+      inversion Hwf_ct; subst.
+      inversion H; subst.
+      exact H3.
+    + (* C = S C', recurse *)
+      inversion Hwf_ct; subst.
+      assert (Hfind_CT' : find_class CT' C' = Some def).
+      {
+        simpl in Hfind.
+        exact Hfind.
+      }
+
+      apply (Forall_nth_error_wf_class (cdef :: CT') CT' C' def).
+      * inversion H; subst.
+      exact H4.
+      * exact Hfind_CT'.
+Qed.
+
 (* Expression Evaluation Preservation *)
-(* AOSEN: this is somehow wrong in PICO because x.f could be readonly |> RDM = Lost, which is not compatiable with the value mut/imm *)
 Lemma expr_eval_preservation : forall CT sΓ rΓ h e v rΓ' h' T,
   wf_r_config CT sΓ rΓ h ->
   expr_has_type CT sΓ e T ->
@@ -978,7 +1224,7 @@ Proof.
   destruct v1 as [|loc]; [trivial|].
   (* Need to show: wf_r_typable CT rΓ h loc (vpa_type_to_type T0 ...) *)
   unfold wf_r_config in Hwf.
-  destruct Hwf as [_ [Hwf_heap [Hwf_renv [Hwf_senv [_ Hcorr]]]]].
+  destruct Hwf as [Hwfclass [Hwf_heap [Hwf_renv [Hwf_senv [_ Hcorr]]]]].
   (* Use heap well-formedness to get field typing *)
   assert (Hobj_wf : wf_obj CT h v).
   {
@@ -1178,10 +1424,104 @@ Proof.
         * (* We have the field lookup in the subtype *)
           exact H9.
       +
-        admit.
-      + admit.
+        eapply field_lookup_deterministic_rel.
+        -- exact Hfield_lookup_o.
+        -- apply (field_inheritance_subtyping CT (rctype (rt_type o)) (sctype T0) f fDef).
+          ++ (* Show base_subtype CT (rctype (rt_type o)) (sctype T0) *)
+            {
+              assert (Hbase_sub : base_subtype CT (rctype (rt_type o)) (sctype T0)).
+            {
+              (* Use the fact that sctype (runtime_type_to_qualified_type (rt_type o)) = rctype (rt_type o) *)
+              (* Show base_subtype CT (rctype (rt_type o)) (sctype T0) *)
+            assert (Hbase_sub : base_subtype CT (rctype (rt_type o)) (sctype T0)).
+            {
+              (* Use the fact that sctype (runtime_type_to_qualified_type (rt_type o)) = rctype (rt_type o) *)
+              assert (Hsctype_eq1 : sctype (runtime_type_to_qualified_type (rt_type o)) = rctype (rt_type o)).
+              {
+                unfold runtime_type_to_qualified_type. simpl. reflexivity.
+              }
+              
+              (* Use the fact that sctype (vpa_qualified_type (q_r_proj q) T0) = sctype T0 *)
+              assert (Hsctype_eq2 : sctype (vpa_qualified_type (q_r_proj q) T0) = sctype T0).
+              {
+                unfold vpa_qualified_type. destruct T0. simpl. reflexivity.
+              }
+              
+              rewrite <- Hsctype_eq1.
+              rewrite <- Hsctype_eq2.
+              
+              (* Now we can use the qualified type subtyping lemma *)
+              apply (qualified_type_subtype_base_subtype CT 
+                (runtime_type_to_qualified_type (rt_type o))
+                (vpa_qualified_type (q_r_proj q) T0)).
+              - exact Hx_sub.
+              - (* Domain constraint for runtime type *)
+                unfold runtime_type_to_qualified_type. simpl.
+                unfold wf_heap in Hwf_heap.
+                assert (Hv_in_heap : v < dom h).
+                {
+                  apply runtime_getObj_dom in H0. exact H0.
+                }
+                apply Hwf_heap in Hv_in_heap.
+                unfold wf_obj in Hv_in_heap.
+                unfold r_type in Hv_in_heap.
+                rewrite H0 in Hv_in_heap.
+                simpl in Hv_in_heap.
+                destruct Hv_in_heap as [Hwf_rtype _].
+                unfold wf_rtypeuse in Hwf_rtype.
+                destruct (bound CT (rctype (rt_type o))) as [qc|] eqn:Hbound.
+                + exact Hwf_rtype.
+                + contradiction Hwf_rtype.
+              - (* Domain constraint for T0 after VPA *)
+                rewrite Hsctype_eq2.
+                (* Use static typing well-formedness *)
+                unfold wf_senv in H4.
+                destruct H4 as [_ Hforall_wf].
+                assert (Hx_bound : x < dom sΓ) by (apply static_getType_dom in H7; exact H7).
+                eapply Forall_nth_error in Hforall_wf; eauto.
+                unfold wf_stypeuse in Hforall_wf.
+                destruct (bound CT (sctype T0)) as [qc|] eqn:Hbound.
+                + destruct Hforall_wf as [_ HT0_dom]. exact HT0_dom.
+                + contradiction Hforall_wf.
+            }
+              ++ exact Hbase_sub.
+            }
+        --  exact Hbase_sub.
+            }
+          ++ exact H9.
+      + 
+      eapply field_lookup_deterministic_rel.
+      -- exact Hfield_lookup_o.
+      -- (* Convert H9 to the same class using subtyping *)
+        apply (field_inheritance_subtyping CT (rctype (rt_type o)) (sctype T0) f fDef).
+        ++ (* Show base_subtype CT (rctype (rt_type o)) (sctype T0) *)
+          unfold runtime_type_to_qualified_type in H2. simpl.
+          unfold vpa_qualified_type in H2. simpl.
+          destruct T0 as [q0 c0].
+          simpl in H2.
+          injection H2 as _ Hsctype_eq.
+          rewrite Hsctype_eq.
+          apply base_refl.
+          simpl.
+          unfold wf_senv in H4.
+          destruct H4 as [_ Hforall_wf].
+          assert (Hx_bound : x < dom sΓ) by (apply static_getType_dom in H7; exact H7).
+          eapply Forall_nth_error in Hforall_wf; eauto.
+          simpl in Hforall_wf.
+          unfold wf_stypeuse in Hforall_wf.
+          destruct (bound CT c0).
+          destruct Hforall_wf as [_ Hc0_dom].
+          exact Hc0_dom.
+          exfalso.
+          exact Hforall_wf.
+        ++ exact H9.
     - (* Lost case - shouldn't happen for concrete objects *)
-      admit.
+      destruct Hx_lost as [Hlost_qual Hbase_sub].
+      eapply field_lookup_deterministic_rel.
+      -- exact Hfield_lookup_o.
+      -- apply (field_inheritance_subtyping CT (rctype (rt_type o)) (sctype T0) f fDef).
+        ++ exact Hbase_sub.
+        ++ exact H9.
   }
   subst fdef.  
   left.
@@ -1190,7 +1530,44 @@ Proof.
   + exact Hsubtype.
   + (* Show VPA preserves subtyping to target type *)
     {
-      admit.
+      unfold vpa_qualified_type, vpa_type_to_type.
+      destruct T0 as [q_T0 c_T0].
+      simpl.
+      (* Now we need to prove subtyping between field types with different qualifiers *)
+      apply qtype_sub.
+      - (* Domain constraint for source *)
+        simpl.
+        assert (Hwf_field : wf_field CT fDef).
+        {
+          eapply sf_def_rel_wf_field; eauto.
+        }
+        unfold wf_field, wf_stypeuse in Hwf_field.
+        destruct (bound CT (f_base_type (ftype fDef))) as [qc|] eqn:Hbound.
+        + destruct Hwf_field as [_ Hdom]. exact Hdom.
+        + contradiction Hwf_field.
+      - (* Domain constraint for target *)  
+        simpl.
+        assert (Hwf_field : wf_field CT fDef).
+        {
+          eapply sf_def_rel_wf_field; eauto.
+        }
+        unfold wf_field, wf_stypeuse in Hwf_field.
+        destruct (bound CT (f_base_type (ftype fDef))) as [qc|] eqn:Hbound.
+        + destruct Hwf_field as [_ Hdom]. exact Hdom.
+        + contradiction Hwf_field.
+      - (* Qualifier subtyping *)
+        admit. (* This one is harder and involve some earlier case for left and right as well*)
+      - (* Base type subtyping - should be reflexive since both have f_base_type (ftype fDef) *)
+        apply base_refl.
+        simpl.
+        assert (Hwf_field : wf_field CT fDef).
+        {
+          eapply sf_def_rel_wf_field; eauto.
+        }
+        unfold wf_field, wf_stypeuse in Hwf_field.
+        destruct (bound CT (f_base_type (ftype fDef))) as [qc|] eqn:Hbound.
+        + destruct Hwf_field as [_ Hdom]. exact Hdom.
+        + contradiction Hwf_field.
     }
 * (* loc doesn't exist in heap - contradiction *)
   exfalso.

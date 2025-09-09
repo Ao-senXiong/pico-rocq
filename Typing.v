@@ -435,6 +435,25 @@ Definition wf_senv (CT : class_table) (sΓ : s_env) : Prop :=
   dom sΓ > 0 /\
   Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) sΓ.
 
+Lemma senv_var_domain : forall CT sΓ i T,
+  wf_senv CT sΓ ->
+  nth_error sΓ i = Some T ->
+  sctype T < dom CT.
+Proof.
+  intros CT sΓ i T Hwf_senv Hnth.
+  unfold wf_senv in Hwf_senv.
+  destruct Hwf_senv as [_ Hforall_wf].
+  assert (Hi_bound : i < dom sΓ).
+  {
+    apply nth_error_Some. rewrite Hnth. discriminate.
+  }
+  eapply Forall_nth_error in Hforall_wf; eauto.
+  unfold wf_stypeuse in Hforall_wf.
+  destruct (bound CT (sctype T)) as [qc|] eqn:Hbound.
+  - destruct Hforall_wf as [_ Hdom]. exact Hdom.
+  - contradiction Hforall_wf.
+Qed.  
+
 (* EXPRESSION TYPING RULES *)
 Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop :=
 
@@ -442,6 +461,7 @@ Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop
   | ET_Null : forall CT Γ q class_name,
       q = Rd -> (* did not define the bottom type of Java base type *)
       wf_senv CT Γ ->
+      class_name < dom CT -> (* Add this constraint *)
       expr_has_type CT Γ ENull (Build_qualified_type q class_name)
 
   (* Variable typing *)
@@ -729,6 +749,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   cdef.(body).(methods) = [] ->
   cdef.(signature).(cname) = class_name ->
   wf_constructor CT class_name cdef.(body).(constructor) ->
+  Forall (wf_field CT) (cdef.(body).(Syntax.fields)) -> 
   wf_class CT cdef
 
 (* Other object *) 
@@ -753,6 +774,181 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   ->
   wf_class CT cdef
 .
+
+(* Enhanced class table well-formedness *)
+Definition wf_class_table (CT : class_table) : Prop :=
+  Forall (wf_class CT) CT /\
+  (* Object class must be at index 0 *)
+  (exists obj_def, find_class CT 0 = Some obj_def /\ 
+                   super (signature obj_def) = None) /\
+  (* All non-Object classes must extend Object *)
+  (forall i def, i > 0 -> find_class CT i = Some def -> 
+                 super (signature def) <> None) /\
+  (* Class name matches index *)
+  (forall i def, find_class CT i = Some def -> 
+                 cname (signature def) = i).
+
+Lemma find_class_cname_consistent : forall CT i def,
+  wf_class_table CT ->
+  find_class CT i = Some def ->
+  cname (signature def) = i.
+Proof.
+  intros CT i def Hwf_ct Hfind.
+  unfold wf_class_table in Hwf_ct.
+  destruct Hwf_ct as [_ [_ [_ Hcname_consistent]]].
+  apply Hcname_consistent; exact Hfind.
+Qed.
+
+Lemma sf_def_rel_wf_field : forall CT C f fdef,
+  wf_class_table CT ->
+  sf_def_rel CT C f fdef ->
+  wf_field CT fdef.
+Proof.
+  intros CT C f fdef Hwf_ct Hsf_def.
+  unfold sf_def_rel in Hsf_def.
+  inversion Hsf_def as [CT' C' fields f' fdef' Hcf Hget]. subst.
+  generalize dependent fdef.
+  induction Hcf; intros fdef Hget.
+  - (* CF_NotFound case *)
+    intros Hgget.
+    inversion Hget as [CT' C' fields f' fdef' Hcf Hget']. subst.
+    assert (Hfields_empty : fields = []).
+    {
+      eapply collect_fields_deterministic_rel; eauto.
+      apply CF_NotFound. exact H.
+    }
+    subst fields.
+    unfold gget in Hget'.
+    simpl in Hget'.
+    exfalso.
+    simpl in Hget'.
+    destruct f; discriminate Hget'.
+  - (* CF_Object case *)
+    intros Hgget.
+    unfold gget in Hgget.
+    simpl in Hgget.
+    destruct f; discriminate Hgget.
+  - (* CF_Inherit case *)
+    intros Hgget.
+    unfold gget in Hgget.
+    rewrite nth_error_app in Hgget.
+    destruct (lt_dec f (length parent_fields)) as [Hlt | Hge].
+    + (* Field is from parent class *)
+      apply IHHcf; auto.
+      apply FL_Found with parent_fields; auto.
+      unfold gget.
+      destruct (f <? dom parent_fields) eqn:Hcmp.
+      -- exact Hgget.
+      -- exfalso. 
+        apply Nat.ltb_nlt in Hcmp.
+    lia.
+      --
+      unfold gget.
+    assert (Hcmp : f <? dom parent_fields = true).
+    {
+      apply Nat.ltb_lt.
+      exact Hlt.
+    }
+    rewrite Hcmp in Hgget.
+    exact Hgget.
+    + (* Field is from own class *)
+    assert (Hown_field : nth_error own_fields (f - dom parent_fields) = Some fdef).
+    {
+      assert (Hcmp : f <? dom parent_fields = false).
+      {
+        apply Nat.ltb_nlt.
+        exact Hge.
+      }
+      rewrite Hcmp in Hgget.
+      exact Hgget.
+    }
+    assert (HWFC : wf_class CT def).
+    {
+      unfold wf_class_table in Hwf_ct.
+      destruct Hwf_ct as [wf _].
+      eapply Forall_nth_error; eauto.
+    }
+    inversion HWFC; subst.
+  rewrite H4 in Hown_field.
+  simpl in Hown_field.
+  destruct (f - dom parent_fields) as [|ntest]; simpl in Hown_field; discriminate Hown_field.
+  destruct H5 as [Hwf_ctor [Hwf_methods Hbound_case]].
+  destruct (bound CT superC) as [q_super|] eqn:Hbound.
+  ++ (* Some q_super case *)
+    destruct Hbound_case as [fs [Hcf_fs [Hvpa Hwf_fs]]].
+    assert (Hfields_eq : fs = parent_fields ++ fields (body def)).
+    {
+      eapply collect_fields_deterministic_rel; eauto.
+      apply CF_Inherit with (def := def) (parent := parent); eauto.
+      assert (HC_eq : C = C0).
+      {
+        unfold C0, sig.
+        symmetry.
+        eapply find_class_cname_consistent; eauto.
+      }
+      rewrite <- HC_eq.
+      exact H.
+    }
+    subst fs.
+    apply Forall_app in Hwf_fs.
+    destruct Hwf_fs as [_ Hwf_own].
+    eapply Forall_nth_error; eauto.
+  ++ (* None case *)
+    exfalso.
+    assert (Hfields_eq : [] = parent_fields ++ fields (body def)).
+    {
+      eapply collect_fields_deterministic_rel; eauto.
+      apply CF_Inherit with (def := def) (parent := parent); eauto.
+            assert (HC_eq : C = C0).
+      {
+        unfold C0, sig.
+        symmetry.
+        eapply find_class_cname_consistent; eauto.
+      }
+      rewrite <- HC_eq.
+      exact H.
+    }
+    destruct parent_fields, (fields (body def)); simpl in Hfields_eq; try discriminate.
+    simpl in Hown_field.
+    destruct (f - 0); simpl in Hown_field; discriminate.
+Qed.
+
+Lemma vpa_type_to_type_sctype : forall T fieldType,
+  sctype (vpa_type_to_type T fieldType) = sctype fieldType.
+Proof.
+  intros T fieldType.
+  unfold vpa_type_to_type.
+  destruct T as [q1 c1].
+  destruct fieldType as [q2 c2].
+  simpl.
+  reflexivity.
+Qed.
+
+Lemma expr_has_type_class_in_table : forall CT sΓ e T,
+  wf_class_table CT ->
+  expr_has_type CT sΓ e T ->
+  sctype T < dom CT.
+Proof.
+  intros CT sΓ e T HWFCT Htype.
+  induction Htype.
+  - (* ET_Null case *)
+    exact H1.
+  - (* ET_Var case *)
+    (* Use the fact that variables in well-formed environments have bounded types *)
+    eapply senv_var_domain; eauto.
+  - (* ET_Field case *)
+    assert (Hwf_field : wf_field CT fDef).
+    {
+      eapply sf_def_rel_wf_field; eauto.
+    }
+    unfold wf_field, wf_stypeuse in Hwf_field.
+    destruct (bound CT (f_base_type (ftype fDef))) as [qc|] eqn:Hbound.
+    + destruct Hwf_field as [_ Hdom].
+    rewrite vpa_type_to_type_sctype.
+      simpl.
+      exact Hdom.
+    + contradiction Hwf_field.
+Qed.    
 
 (* Well-formedness of program  Aosen: I put it at the end because the main statement need to be well-typed*)
 (* Definition WFProgram (p: program_def) : Prop :=

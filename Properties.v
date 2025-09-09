@@ -29,7 +29,14 @@ Proof.
     unfold wf_r_config in *.
     destruct H3 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
-    + (* wellformed class *) exact Hclass.
+    + (* wellformed class *) 
+    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
     + (* wellformed heap *) exact Hheap.
     + (* Length of runtime environment greater than 0 *)
     simpl. rewrite length_app. simpl. lia.
@@ -125,7 +132,14 @@ Proof.
     unfold wf_r_config in *.
     destruct H4 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
-    + (* wellformed class *) exact Hclass.
+    + (* wellformed class *) 
+    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
     + (* wellformed heap *) exact Hheap.
     + (* Length of runtime environment greater than 0 *)
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
@@ -236,10 +250,18 @@ Proof.
           }
           subst sqt.
           assert (H_loc_Te : wf_r_typable CT rΓ h' loc Te).
-          (* {
+          {
             (* Apply expression evaluation preservation lemma *)
             apply (expr_eval_preservation CT sΓ rΓ h' e (Iot loc) rΓ h' Te).
             - unfold wf_r_config. repeat split; eauto. 
+            + (* wellformed class *) 
+            unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+            + (* Object wellformedness *)
+            unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+            + (* All other classes have super class*)
+            unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
+            + (* Class identifier match*)
+            unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
             + unfold wf_renv in Hrenv. destruct Hrenv as [Hrenvdom _]. exact Hrenvdom.
             + unfold wf_renv in Hrenv. destruct Hrenv as [_ [Hreceiver Hrvals]]. exact Hreceiver.
             + unfold wf_renv in Hrenv. destruct Hrenv as [_ [Hreceiver Hrvals]]. exact Hrvals.
@@ -247,7 +269,7 @@ Proof.
             + unfold wf_senv in Hsenv. destruct Hsenv as [Hsenvdom Htypable]. exact Htypable.
             - exact H0.
             - exact H11.
-          } *)
+          }
           (* Use subtyping to convert Te to Tx *)
           eapply wf_r_typable_subtype; eauto.
           (* The environment update doesn't affect loc's typing since loc is fresh *)
@@ -276,6 +298,7 @@ Proof.
               rewrite <- Heq_orig, <- Heq.
               reflexivity.
             }
+            
             (* rewrite Hι'_eq. *)
             (* exact H_loc_Te. *)
             admit.
@@ -308,10 +331,25 @@ Proof.
                 subst v0.
                 simpl in Hthis.
                 discriminate Hthis.
-          - admit.
-          - admit. 
-          - admit.
-          - admit.
+          - apply senv_var_domain with (sΓ:=sΓ) (i:=x). exact H. exact Hnth.
+          - 
+          unfold wf_r_typable in H_loc_Te |- *.
+          destruct (r_type h' loc) as [rqt|] eqn:Hrtype; [|contradiction].
+          destruct (get_this_var_mapping (vars rΓ)) as [ι0|] eqn:Hthis_orig; [|contradiction].
+          destruct (r_muttype h' ι0) as [q|] eqn:Hmut; [|contradiction].
+          assert (Hthis_preserved : get_this_var_mapping (vars (rΓ <| vars := update x (Iot loc) (vars rΓ) |>)) = Some ι0).
+          {
+            simpl.
+            unfold get_this_var_mapping in Hthis_orig |- *.
+            destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+            - discriminate Hthis_orig.
+            - destruct x as [|x'].
+              + contradiction H1. reflexivity.
+              + simpl. exact Hthis_orig.
+          }
+          rewrite Hthis_preserved.
+          rewrite Hmut.
+          exact H_loc_Te.
           }
           exact Hsubtype_preserved.
       * (* Case: i ≠ x (unchanged variable) *)
@@ -349,7 +387,14 @@ Proof.
     unfold wf_r_config in *.
     destruct H6 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
-    + (* wellformed class *) exact Hclass.
+    + (* wellformed class *) 
+    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
     + (* wellformed heap *) 
     unfold wf_heap in *.
     intros ι Hdom.
@@ -492,7 +537,14 @@ Proof.
     unfold wf_r_config in *.
     destruct H10 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
-    + (* wellformed class *) exact Hclass.
+    + (* wellformed class *) 
+    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
     + (* wellformed heap *) 
     unfold wf_heap.
     intros ι Hι.
@@ -770,7 +822,14 @@ Proof.
     unfold wf_r_config in *.
     destruct H8 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
-    + (* wellformed class *) exact Hclass.
+    + (* wellformed class *) 
+    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
     + admit.
     + (* Length of runtime environment greater than 0 *)
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
@@ -885,108 +944,6 @@ Proof.
   intro H.
   inversion H; subst; discriminate.
 Qed.
-
-(* Lemma immutable_object_static_type_not_mut :
-  forall CT sΓ rΓ h l C fields sqt,
-    wf_r_config CT sΓ rΓ h ->
-    runtime_getObj h l = Some (mkObj (imm_runtime_type C) fields) ->
-    wf_r_typable CT rΓ h l sqt ->
-    sqtype sqt <> Mut.
-Proof.
-  intros CT sΓ rΓ h l C fields sqt Hwf_config Hobj Hwf_typable.
-  intro Hcontra.
-  
-  unfold wf_r_typable in Hwf_typable.
-  destruct (r_type h l) as [rqt|] eqn:Hrtype; [|contradiction].
-  unfold r_type in Hrtype.
-  rewrite Hobj in Hrtype.
-  simpl in Hrtype.
-  injection Hrtype as Hrtype_eq.
-  
-  destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
-  destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
-  
-  (* The left side is Imm C *)
-  assert (Hlhs: runtime_type_to_qualified_type rqt = {| sqtype := Imm; sctype := C |}).
-  {
-    rewrite <- Hrtype_eq.
-    unfold runtime_type_to_qualified_type, imm_runtime_type.
-    simpl. reflexivity.
-  }
-  
-  (* The right side is vpa_qualified_type (q_r_proj q) (Mut c) *)
-  destruct sqt as [q_sqt c_sqt].
-  simpl in Hcontra.
-  subst q_sqt.
-  
-  rewrite Hlhs in Hwf_typable.
-  
-  (* Now we have: qualified_type_subtype CT (Imm C) (vpa_qualified_type (q_r_proj q) (Mut c_sqt)) *)
-  unfold vpa_qualified_type in Hwf_typable.
-  simpl in Hwf_typable.
-  unfold vpa_mutabilty in Hwf_typable.
-  
-  (* Case analysis on q_r_proj q *)
-  destruct (q_r_proj q) eqn:Hq_proj; simpl in Hwf_typable.
-  inversion Hwf_typable; subst.
-  - (* qtype_sub case *)
-    (* We have q_subtype Imm Mut *)
-    inversion H1; subst.
-  - (* qtype_trans case *)  
-    admit.
-
-  - (* qtype_refl case: (Imm C) = (Mut c_sqt), impossible *)
-    admit.
-Admitted. *)
-
-(* Lemma: Immutable objects cannot have Mut adapted types *)
-(* Lemma immutable_object_non_mut_adapted_type :
-  forall CT sΓ rΓ h l C Tx Tthis fields,
-    wf_r_config CT sΓ rΓ h ->
-    runtime_getObj h l = Some (mkObj (imm_runtime_type C) fields) ->
-    wf_r_typable CT rΓ h l Tx ->
-    get_this_type sΓ = Some Tthis ->
-    (vpa_type_to_type Tthis Tx).(sqtype) <> Mut.
-Proof.
-  intros CT sΓ rΓ h l C Tx Tthis fields Hwf_config Hobj Hwf_typable Hthis_type.
-  intro Hcontra.
-  
-  unfold vpa_type_to_type in Hcontra.
-  destruct Tthis as [q_this c_this].
-  destruct Tx as [q_tx c_tx].
-  simpl in Hcontra.
-  unfold vpa_mutabilty in Hcontra.
-  
-  (* Case analysis on q_this and q_tx *)
-  destruct q_this; destruct q_tx; simpl in Hcontra; try discriminate Hcontra.
-  - (* q_this = Mut, q_tx = Mut: vpa_mutabilty Mut Mut = Mut *)
-    (* This case is actually true: Mut = Mut, so we need a different approach *)
-    (* The contradiction should come from the fact that q_this cannot be Mut 
-       for an immutable object, or q_tx cannot be Mut *)
-    exfalso.
-    (* We need to show this is impossible from well-formedness *)
-    admit.
-  - (* q_this = Mut, q_tx = RDM: vpa_mutabilty Mut RDM = Mut *)
-    exfalso.
-    admit.
-  - 
-    exfalso.
-    admit.
-  - (* RDM and Mut*)
-    exfalso.
-    admit.
-  - (* RD and Mut *)
-    exfalso.
-    admit.
-  - (* Lost and Mut *)
-    exfalso.
-    admit. 
-  - (* Bot and Mut *)
-    exfalso.
-    admit.  
-  (* All other cases should discriminate since they don't produce Mut *)
-Admitted. *)
-
 
 (* ------------------------------------------------------------- *)
 (* Immutability properties for PICO *)
@@ -1328,7 +1285,14 @@ Proof.
     unfold wf_r_config in *.
     destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
-    - exact Hclass.
+    - (* wellformed class *) 
+    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    - (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    - (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
+    - (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
     - exact Hheap.
     - rewrite H11. simpl. lia.
     - exists ly. rewrite H11. simpl. split. reflexivity. unfold r_basetype in H6.
