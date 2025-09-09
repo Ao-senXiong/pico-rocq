@@ -298,13 +298,8 @@ Proof.
               rewrite <- Heq_orig, <- Heq.
               reflexivity.
             }
-            
-            (* rewrite Hι'_eq. *)
-            (* exact H_loc_Te. *)
-            admit.
-              (* eapply qtype_trans; eauto. *)
-            + admit.
-             (* contradiction. *)
+            eapply expr_has_type_class_in_table; eauto.
+            + eapply expr_has_type_class_in_table; eauto.
           - 
             unfold get_this_var_mapping in Hthis.
             simpl in Hthis.
@@ -433,6 +428,13 @@ Proof.
         ** rewrite update_length in Hdom.
           symmetry. exact Hneq.
         **
+        rewrite update_length in Hdom.
+        destruct (nth_error h ι) eqn:Htest.
+        2:{
+          exfalso.
+          apply nth_error_None in Htest.
+          lia.
+        }
         admit.
         * exfalso.
         discriminate H12.
@@ -579,30 +581,8 @@ Proof.
               discriminate Hbound.
             --- discriminate Hctor.
           ** discriminate H2.
-      -- admit.
-        (* split. simpl. remember dom (sparams consig) as n1.
-        assert (Htyping : stmt_typing CT sΓ (SNew x qc C args) sΓ).
-        {
-          (* This should be derivable from the evaluation and well-formedness *)
-          admit.
-        }
-        (* Apply the new_stmt_args_length lemma *)
-        apply new_stmt_args_length with (argtypes := argtypes) (n1 := n1) (consig := consig) in Htyping; auto.
-        (* Use runtime lookup length preservation *)
-        apply runtime_lookup_list_preserves_length in H17.
-        (* Constructor parameters should match class fields *)
-        assert (Hcparams_fields :  dom (sparams consig) + dom (cparams consig) = dom (collect_fields CT C)).
-        {
-          (* This should follow from constructor well-formedness *)
-          admit.
-        }
-        (* Combine: dom vals = dom args = dom (sparams + cparams) = dom (collect_fields) *)
-        rewrite -> H17.
-        rewrite <- Hcparams_fields.
-        rewrite -> Htyping.
-        reflexivity.
-        simpl.
-        admit. *)
+      --
+       admit.
     * (* ι < dom h (existing object) *)
       assert (ι < dom h) by lia.
       unfold wf_obj.
@@ -614,29 +594,34 @@ Proof.
           destruct Hheap as [Hrtypeuse [Hfields_len Hforall2]].
           repeat split.
           + exact Hrtypeuse.
-          + admit.
-       } (* exact Hfields_len. *)
-          (* + Show Forall2 is preserved with extended heap
-          eapply Forall2_impl; [|exact Hforall2].
-          intros v fdef Hprop.
-          destruct v as [|loc]; [trivial|].
-          destruct (runtime_getObj h loc) as [obj_loc|] eqn:Hobj_loc.
-        - (* loc exists in original heap *)
-          destruct Hprop as [rqt [Hrtype_orig Hsubtype_orig]].
-          (* Show it exists in extended heap *)
-          (* assert (Hloc_bound : loc < dom h) by (apply runtime_getObj_dom in Hobj_loc; exact Hloc_bound). *)
-          rewrite runtime_getObj_last2; auto.
-          apply runtime_getObj_dom in Hobj_loc.
-          exact Hobj_loc.
-          rewrite Hobj_loc.
-        exists rqt.
-        split.
-          unfold r_type in Hrtype_orig |- *.
-          apply runtime_getObj_dom in Hobj_loc.
-          rewrite runtime_getObj_last2; auto.
-        exact Hsubtype_orig.
-        - contradiction Hprop. *)
-      (* } *)
+          + 
+          {
+          exists Hfields_len.
+          destruct Hforall2 as [Hcollect [Hlen_eq Hforall2_prop]].
+          split.
+          - exact Hcollect.
+          - split.
+            + exact Hlen_eq.
+            + eapply Forall2_impl; [|exact Hforall2_prop].
+              intros v fdef Hprop.
+              destruct v as [|loc]; [trivial|].
+              destruct (runtime_getObj h loc) as [obj_loc|] eqn:Hobj_loc.
+              * (* loc exists in original heap *)
+                destruct Hprop as [rqt [Hrtype_orig Hsubtype_orig]].
+                assert (loc < dom h). {
+                  (apply runtime_getObj_dom in Hobj_loc).
+                  exact Hobj_loc.
+                }
+                rewrite runtime_getObj_last2; auto.
+                rewrite Hobj_loc.
+                exists rqt.
+                split.
+                -- unfold r_type in Hrtype_orig |- *.
+                  rewrite runtime_getObj_last2; auto.
+                -- exact Hsubtype_orig.
+              * contradiction Hprop.
+              }
+       }
     + (* Length of runtime environment greater than 0 *)
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].
       subst.
@@ -753,10 +738,32 @@ Proof.
                 destruct (runtime_getObj h l1) as [obj|] eqn:Hobj; [|discriminate].
                 injection H18 as H18_eq.
                 rewrite H18_eq.
-                (* Use the subtyping relationship from the New statement typing *)
-                (* The key insight is that H9 gives you the subtyping relationship *)
-                (* and you need to connect it with viewpoint adaptation *)
-                admit.
+                left.
+                assert (Hsqt_eq : sqt = Tx).
+                {
+                  unfold static_getType in H0.
+                  rewrite Hnth in H0.
+                  injection H0 as H0_eq.
+                  exact H0_eq.
+                }
+                subst sqt.
+                unfold runtime_type_to_qualified_type.
+                simpl.
+                apply qtype_sub.
+                -- (* Domain constraint for new object *)
+                  unfold constructor_sig_lookup in H2.
+                  destruct (constructor_def_lookup CT C) as [ctor|] eqn:Hctor; [|discriminate].
+                  unfold constructor_def_lookup in Hctor.
+                  destruct (find_class CT C) as [def|] eqn:Hfind; [|discriminate].
+                  apply find_class_dom in Hfind.
+                  exact Hfind.
+                -- (* Domain constraint for target type *)
+                  apply (qualified_type_subtype_dom2 CT Tx).
+                  admit.
+                -- (* Qualifier subtyping *)
+                  admit. (* This involves relating qadapted to the VPA result *)
+                -- (* Base type subtyping: C <: sctype Tx *)
+                  admit.
           }
       - (* Case: i ≠ x (existing variable) *)
         simpl.
