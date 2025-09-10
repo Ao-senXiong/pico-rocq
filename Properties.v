@@ -165,56 +165,60 @@ Proof.
               simpl. (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
               exact Hiot.
     + (* wellformed runtime environment *)
-     unfold wf_renv in *.
-      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
-      simpl.
-      apply Forall_update.
-      * exact Hallvals.
-      * destruct v2 as [|loc].
-        -- trivial.
-        -- inversion H11; subst.
-          assert (Hloc_in_vars : exists i, nth_error (vars rΓ) i = Some (Iot loc)).
-          ++ apply runtime_getVal_dom in H4.
-            exists x0. 
-            unfold runtime_getVal in H4.
-            inversion H11; subst.
-            unfold runtime_getVal in H7.
-            exact H7.
-          ++ destruct Hloc_in_vars as [i Hi].
-            assert (Hloc_wf := Forall_nth_error _ _ _ _ Hallvals Hi).
-            simpl in Hloc_wf.
-            exact Hloc_wf.
-        ++
-        specialize (Hheap v).
-        assert (Hv_dom : v < dom h').
-        {
-          apply runtime_getObj_dom in H6.
-          exact H6.
-        }
-        specialize (Hheap Hv_dom).
-        unfold wf_obj in Hheap.
-        rewrite H6 in Hheap.
-        (* destruct Hheap as [_ [_ Hwf_fields]]. *)
-        assert (Hloc_in_fields : nth_error (fields_map o) f = Some (Iot loc)).
-        {
+    unfold wf_renv in *.
+    destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+    simpl.
+    apply Forall_update.
+    * exact Hallvals.
+    * destruct v2 as [|loc].
+      -- trivial.
+      -- inversion H11; subst.
+        assert (Hloc_in_vars : exists i, nth_error (vars rΓ) i = Some (Iot loc)).
+        ++ apply runtime_getVal_dom in H4.
+          exists x0. 
+          unfold runtime_getVal in H4.
+          inversion H11; subst.
+          unfold runtime_getVal in H7.
           exact H7.
-        }
-        (* assert (Hfield_exists : exists fdef, nth_error (CollectFields CT (rctype (rt_type o))) f fdef).
-        {
-          apply Forall2_length in Hwf_fields.
-          assert (Hf_dom : f < List.length (fields_map o)) by (apply nth_error_Some; rewrite Hloc_in_fields; discriminate).
-          rewrite Hwf_fields in Hf_dom.
-          destruct (nth_error (collect_fields CT (rctype (rt_type o))) f) as [fdef|] eqn:Hfdef.
-          - exists fdef. reflexivity.
-          - exfalso. apply nth_error_None in Hfdef. lia.
-        } *)
-        (* destruct Hfield_exists as [fdef Hfdef]. *)
-        (* assert (Hfield_prop := Forall2_nth_error_prop _ _ _ _ _ _ Hwf_fields Hloc_in_fields Hfdef). *)
-        (* simpl in Hfield_prop. *)
-        (* destruct (runtime_getObj h' loc) as [o'|] eqn:Hloc_obj; [trivial | contradiction]. *)
-        admit.
-      * apply runtime_getVal_dom in H8.
-        exact H8.
+        ++ destruct Hloc_in_vars as [i Hi].
+          assert (Hloc_wf := Forall_nth_error _ _ _ _ Hallvals Hi).
+          simpl in Hloc_wf.
+          exact Hloc_wf.
+      ++
+      specialize (Hheap v).
+      assert (Hv_dom : v < dom h').
+      {
+        apply runtime_getObj_dom in H6.
+        exact H6.
+      }
+      specialize (Hheap Hv_dom).
+      unfold wf_obj in Hheap.
+      rewrite H6 in Hheap.
+      (* destruct Hheap as [_ [_ Hwf_fields]]. *)
+      assert (Hloc_in_fields : nth_error (fields_map o) f = Some (Iot loc)).
+      {
+        exact H7.
+      }
+      destruct Hheap as [_ [field_defs [Hcollect [Hlen_eq Hforall2]]]].
+      assert (Hfield_exists : exists fdef, nth_error field_defs f = Some fdef).
+      {
+        assert (Hf_dom : f < List.length (fields_map o)) by (apply nth_error_Some; rewrite Hloc_in_fields; discriminate).
+        rewrite Hlen_eq in Hf_dom.
+        destruct (nth_error field_defs f) as [fdef|] eqn:Hfdef.
+        - exists fdef. reflexivity.
+        - exfalso. apply nth_error_None in Hfdef. lia.
+      }
+      destruct Hfield_exists as [fdef Hfdef].
+      (* assert (Hfield_prop := Forall2_nth_error_prop _ _ _ _ _ _ Hwf_fields Hloc_in_fields Hfdef).
+      simpl in Hfield_prop. *)
+      destruct (runtime_getObj h' loc) as [o'|] eqn:Hloc_obj.
+      trivial.
+      assert (Hfield_prop := Forall2_nth_error_prop _ _ _ _ _ _ Hforall2 Hloc_in_fields Hfdef).
+      simpl in Hfield_prop.
+      rewrite Hloc_obj in Hfield_prop.
+      exact Hfield_prop.
+    * apply runtime_getVal_dom in H8.
+      exact H8.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength. 
     + (* wellformed static environment *)
       destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
@@ -582,6 +586,7 @@ Proof.
             --- discriminate Hctor.
           ** discriminate H2.
       --
+      repeat split.
        admit.
     * (* ι < dom h (existing object) *)
       assert (ι < dom h) by lia.
