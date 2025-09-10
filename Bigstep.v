@@ -926,6 +926,16 @@ Proof.
       * exact Hfind_CT'.
 Qed.
 
+Lemma vpa_assingability_assign_cases: forall q a,
+  vpa_assignability q a = Assignable ->
+  (a = Assignable) \/
+  (q = Mut /\ a = RDA).
+Proof.
+  intros q a Hvpa.
+  unfold vpa_assignability in Hvpa.
+  destruct q, a; simpl in Hvpa; try discriminate; auto.
+Qed.
+
 Lemma vpa_type_to_type_imm_cases : forall q1 q2,
   vpa_mutabilty q1 q2 = Imm ->
   (q2 = Imm) \/

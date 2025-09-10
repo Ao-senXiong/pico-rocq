@@ -1126,308 +1126,143 @@ Proof.
   - (* Local *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* VarAss *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* FldWrite *) 
-    (* Key case: show contradiction with can_assign for immutable Final/RDA fields *)
-    {
-      destruct (Nat.eq_dec l lx) as [Heq_l | Hneq_l].
-      - (* Case: l = lx (same object being written to) *)
-        subst l.
-        (* Extract the object type from H0 and H6 *)
-        rewrite H0 in H6.
-        injection H6 as H6_eq.
-        subst o.
-        (* Now we have an immutable object, but can_assign returned true *)
-        (* This should be impossible for Final/RDA fields on immutable objects *)
-        destruct (Nat.eq_dec f f0) as [Heq_f | Hneq_f].
-        + (* Case: f = f0 (same field being written) *)
-          subst f.
-          (* Show contradiction: can_assign should be false for immutable Final/RDA fields *)
-          exfalso.
-          unfold wf_r_config in H1.
-          destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
-          assert (Hx_bound : x < dom sΓ) by (apply runtime_getVal_dom in H3; rewrite <- Hlen in H3; exact H3).
-          inversion H2; subst.
-          specialize (Hcorr x Hx_bound Tx H12).
-          rewrite H3 in Hcorr.
-          assert (Hsubtype: base_subtype CT (sctype Tx) C).
-          {
-            admit.
-            (* unfold wf_r_typable in Hcorr.
-            destruct (r_type h lx) as [rqt|] eqn:Hrtype; [|contradiction].
-            unfold r_type in Hrtype.
-            rewrite H0 in Hrtype.
-            simpl in Hrtype.
-            injection Hrtype as Hrtype_eq.
-            destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
-            destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
-            destruct Hcorr as [Hcorr | Hcorr_lost].
-            apply qualified_type_subtype_base_subtype in Hcorr.
-            simpl in Hcorr.
-            rewrite <- Hrtype_eq in Hcorr.
-            - (* Use transitivity and reflexivity of subtyping *)
-              simpl in Hcorr.
-              admit.
-            - (* Goal 2: sctype bound *)
-              rewrite <- Hrtype_eq.
-              simpl.
-              (* C < dom CT follows from well-formedness *)
-              specialize (Hheap lx H).
-              unfold wf_obj in Hheap.
-              rewrite H0 in Hheap.
-              destruct Hheap as [Hwf_rtype _].
-              unfold wf_rtypeuse in Hwf_rtype.
-              admit.
-              (* destruct (bound CT C) as [q_c|] eqn:Hbound; [|]. *)
-              (* exact Hwf_rtype. *)
-            - (* Goal 3: adapted type bound *)
-              rewrite vpa_qualified_type_sctype.
-              (* sctype Tx < dom CT follows from well-formedness of Tx *)
-              assert (Hwf_Tx: wf_stypeuse CT (sqtype Tx) (sctype Tx)).
-              {
-                unfold wf_senv in Hsenv.
-                destruct Hsenv as [_ Hforall].
-                assert (Hx_in: x < dom sΓ') by exact Hx_bound.
-                admit.
-                (* assert (Htx_nth: nth_error sΓ' x = Some Tx) by (apply static_getType_dom; exact H12). *)
-                (* apply (Forall_nth_error _ _ _ _ Hforall Htx_nth). *)
-              }
-              unfold wf_stypeuse in Hwf_Tx.
-              destruct (bound CT (sctype Tx)) as [q_c|] eqn:Hbound; [|contradiction].
-              destruct Hwf_Tx as [_ Hdom].
-              exact Hdom. *)
-          }
-
-          (* Use field inheritance to show assignability is preserved *)
-          assert (Ha_inherited: sf_assignability_rel CT (sctype Tx) f0 a).
-          {
-            exact H17.
-          }
-          (* Use subtyping lemma to connect assignabilities *)
-          assert (Ha_c: exists a_c, sf_assignability_rel CT C f0 a_c /\ a = a_c).
-          {
-            (* Use your sf_assignability_subtyping lemma *)
-            destruct H5 as [HFinal | HRDA].
-            - exists Final.
-              split; auto.
-              (* Use sf_assignability_deterministic via subtyping *)
-              eapply sf_assignability_subtyping in HFinal; eauto.
-              apply sf_assignability_deterministic_rel with (CT := CT) (C := sctype Tx) (f := f0); auto.
-            - exists RDA.
-              split; auto.
-              eapply sf_assignability_subtyping in HRDA; eauto.
-              apply sf_assignability_deterministic_rel with (CT := CT) (C := sctype Tx) (f := f0); auto.
-          }
-          destruct Ha_c as [a_c [Ha_c_rel Ha_eq]].
-          subst a.
-
-          remember (get_this_type sΓ') as Tthis.
-
-          destruct Tthis as [tthis|] eqn:HTthis_some.
-          2: {
-            unfold wf_senv in Hsenv.
-            destruct Hsenv as [Hdom_pos _].
-            unfold get_this_type in HeqTthis.
-            destruct sΓ' as [|hd tl] eqn:Hsγ_cases.
-            - (* Case: sΓ' = [] *)
-              simpl in Hdom_pos.
-              lia.
-            - (* Case: sΓ' = hd :: tl *)
-              simpl in HeqTthis.
-              discriminate HeqTthis.
-          }
-          (* Now we have vpa_assignability (sqtype Tx) a_c = Assignable *)
-          (* But the object is immutable, so sqtype Tx should be Rd *)
-          assert (Hsqtype_rd: sqtype Tx = Rd \/ sqtype Tx = Imm \/ (sqtype Tx = RDM /\  tthis.(sqtype) <> Mut)).
-          {
-            (* Extract from wf_r_typable that lx has immutable type *)
-            unfold wf_r_typable in Hcorr.
-            destruct (r_type h lx) as [rqt|] eqn:Hrtype; [|contradiction].
-            unfold r_type in Hrtype.
-            rewrite H0 in Hrtype.
-            simpl in Hrtype.
-            injection Hrtype as Hrtype_eq.
-            destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
-            destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
-            (* Now case analyze on sqtype Tx *)
-            destruct (sqtype Tx) eqn:Hsqtype_cases.
-            - (* Mut case: contradicts Hsqtype_not_mut *)
-              exfalso.
-              admit.
-            - (* Imm case *)
-              right.
-              left.
-              reflexivity.
-            - (* RDM case *)
-              right.
-              right.
-              split.
-              + reflexivity.
-              + (* Need to show sqtype tthis <> Mut *)
-                (* This should follow from tthis being the this type in an immutable context *)
-                admit.
-            - (* Rd case *)
-              left.
-              reflexivity.
-            - (* Lost case *)
-              left.
-              exfalso.
-                            destruct H5 as [HFinal_c | HRDA_c].
-              + (* Case: sf_assignability_rel CT C f0 Final and sf_assignability_rel CT C f0 a_c *)
-                (* Use determinism to show a_c = Final *)
-                assert (Ha_c_final: a_c = Final).
-                {
-                  eapply sf_assignability_deterministic_rel; eauto.
-                }
-                subst a_c.
-                (* Now H20: vpa_assignability Bot Final = Assignable *)
-                unfold vpa_assignability in H20.
-                simpl in H20.
-                (* Bot, Final -> Final, but we have Assignable *)
-                discriminate H20.
-                
-              + (* Case: sf_assignability_rel CT C f0 RDA and sf_assignability_rel CT C f0 a_c *)
-                (* Use determinism to show a_c = RDA *)
-                assert (Ha_c_rda: a_c = RDA).
-                {
-                  eapply sf_assignability_deterministic_rel; eauto.
-                }
-                subst a_c.
-                (* Now H20: vpa_assignability Bot RDA = Assignable *)
-                unfold vpa_assignability in H20.
-                simpl in H20.
-                (* Bot, RDA -> Final, but we have Assignable *)
-                discriminate H20.
-            - (* Bot case *)
-              left.
-              exfalso.
-              destruct H5 as [HFinal_c | HRDA_c].
-              + (* Case: sf_assignability_rel CT C f0 Final and sf_assignability_rel CT C f0 a_c *)
-                (* Use determinism to show a_c = Final *)
-                assert (Ha_c_final: a_c = Final).
-                {
-                  eapply sf_assignability_deterministic_rel; eauto.
-                }
-                subst a_c.
-                (* Now H20: vpa_assignability Bot Final = Assignable *)
-                unfold vpa_assignability in H20.
-                simpl in H20.
-                (* Bot, Final -> Final, but we have Assignable *)
-                discriminate H20.
-                
-              + (* Case: sf_assignability_rel CT C f0 RDA and sf_assignability_rel CT C f0 a_c *)
-                (* Use determinism to show a_c = RDA *)
-                assert (Ha_c_rda: a_c = RDA).
-                {
-                  eapply sf_assignability_deterministic_rel; eauto.
-                }
-                subst a_c.
-                (* Now H20: vpa_assignability Bot RDA = Assignable *)
-                unfold vpa_assignability in H20.
-                simpl in H20.
-                (* Bot, RDA -> Final, but we have Assignable *)
-                discriminate H20.
-          }
-
-          (* Now show the contradiction *)
-          destruct H5 as [HFinal_c | HRDA_c].
-          * (* Case: Final *)
-            destruct Hsqtype_rd as [HRd | HImm].
-            -- (* sqtype Tx = Rd *)
-              assert (Ha_c_final: a_c = Final).
-              {
-                eapply sf_assignability_deterministic_rel; eauto.
-              }
-              subst a_c.
-
-              (* Now H20 becomes: vpa_assignability (sqtype Tx) Final = Assignable *)
-              rewrite HRd in H20.
-              unfold ViewpointAdaptation.vpa_assignability in H20.
-              simpl in H20.
-              (* Now H20 should be: Final = Assignable *)
-              discriminate H20.
-            -- (* sqtype Tx = Imm *)
-              assert (Ha_c_final: a_c = Final).
-              {
-                eapply sf_assignability_deterministic_rel; eauto.
-              }
-              subst a_c.
-              destruct HImm as [HImm | HRDMNOLost ].
-              (* Now H20 becomes: vpa_assignability (sqtype Tx) Final = Assignable *)
-              rewrite HImm in H20.
-              unfold ViewpointAdaptation.vpa_assignability in H20.
-              simpl in H20.
-              (* Now H20 should be: Final = Assignable *)
-              discriminate H20.
-              admit.
-          * (* Case: RDA *)
-            destruct Hsqtype_rd as [HRd | HImm].
-            -- (* sqtype Tx = Rd *)
-              assert (Ha_c_final: a_c = RDA).
-              {
-                eapply sf_assignability_deterministic_rel; eauto.
-              }
-              subst a_c.
-
-              (* Now H20 becomes: vpa_assignability (sqtype Tx) Final = Assignable *)
-              rewrite HRd in H20.
-              unfold ViewpointAdaptation.vpa_assignability in H20.
-              simpl in H20.
-              (* Now H20 should be: Final = Assignable *)
-              discriminate H20.
-            -- (* sqtype Tx = Imm *)
-              assert (Ha_c_final: a_c = RDA).
-              {
-                eapply sf_assignability_deterministic_rel; eauto.
-              }
-              subst a_c.
-              destruct HImm as [HImm | HRDMNOLost ].
-              (* Now H20 becomes: vpa_assignability (sqtype Tx) Final = Assignable *)
-              rewrite HImm in H20.
-              unfold ViewpointAdaptation.vpa_assignability in H20.
-              simpl in H20.
-              (* Now H20 should be: Final = Assignable *)
-              discriminate H20.
-              admit.
-          + (* Case: f ≠ f0 (different field) *)
+  {
+    destruct (Nat.eq_dec l lx) as [Heq_l | Hneq_l].
+    - (* Case: l = lx (same object being written to) *)
+      subst l.
+      (* Extract the object type from H0 and H6 *)
+      rewrite H0 in H6.
+      injection H6 as H6_eq.
+      subst o.
+      (* Now we have an immutable object, but can_assign returned true *)
+      (* This should be impossible for Final/RDA fields on immutable objects *)
+      destruct (Nat.eq_dec f f0) as [Heq_f | Hneq_f].
+      + (* Case: f = f0 (same field being written) *)
+        subst f.
+        (* Show contradiction: can_assign should be false for immutable Final/RDA fields *)
+        exfalso.
+        unfold wf_r_config in H1.
+        destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+        assert (Hx_bound : x < dom sΓ) by (apply runtime_getVal_dom in H3; rewrite <- Hlen in H3; exact H3).
+        inversion H2; subst.
+        specialize (Hcorr x Hx_bound Tx H12).
+        rewrite H3 in Hcorr.
+        assert (Hsubtype: base_subtype CT C (sctype Tx)).
+        {
+          unfold wf_r_typable in Hcorr.
+          destruct (r_type h lx) as [rqt|] eqn:Hrtype; [|contradiction].
+          unfold r_type in Hrtype.
+          rewrite H0 in Hrtype.
+          simpl in Hrtype.
+          injection Hrtype as Hrtype_eq.
+          destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
+          destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
+          destruct Hcorr as [Hbase_sub _].
+          rewrite <- Hrtype_eq in Hbase_sub.
+          simpl in Hbase_sub.
+          exact Hbase_sub.
+        }
+        apply vpa_assingability_assign_cases in H20.
+        destruct H5 as [Hffinal | HfRDA].
+        apply (sf_assignability_subtyping_reverse CT C (sctype Tx) f0 Final) in Hsubtype.
+        destruct Hsubtype as [HqxFinal | Hqxnonexist].
+        assert (Heq : a = Final).
+        {
+          eapply sf_assignability_deterministic_rel; eauto.
+        }
+        subst a.
+        destruct H20 as [HAassignable | HARDA ].
+        discriminate HAassignable.
+        destruct HARDA as [_ HFinalRDA].
+        discriminate HFinalRDA.
+        exfalso.
+        apply Hqxnonexist.
+        exists a.
+        exact H17.
+        exact Hffinal.
+        apply (sf_assignability_subtyping_reverse CT C (sctype Tx) f0 RDA) in Hsubtype.
+        2:{exact HfRDA.
+        }
+        destruct Hsubtype as [HqxRDA | Hqxnonexist].
+        assert (Heq : a = RDA).
+        {
+          eapply sf_assignability_deterministic_rel; eauto.
+        }
+        subst a.
+        destruct H20 as [HAassignable | HARDA ].
+        discriminate HAassignable.
+        unfold wf_r_typable in Hcorr.
+        destruct HARDA as [HsqtypeMut _].
+        unfold r_type in Hcorr.
+        rewrite H0 in Hcorr.
+        simpl in Hcorr.
+        destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
+        destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
+        destruct Hcorr as [_ Hqual].
+        unfold qualifier_typable in Hqual.
+        rewrite HsqtypeMut in Hqual.
+        unfold vpa_mutabilty in Hqual.
+        assert (Hq_proj : q_r_proj q = Imm \/ q_r_proj q = Mut) by apply q_r_proj_imm_or_mut.
+        destruct Hq_proj as [HqImm | HqMut].
+        -- (* Case: q_r_proj q = Imm *)
+          rewrite HqImm in Hqual.
+          simpl in Hqual.
+          unfold is_true in Hqual.
+          discriminate Hqual.
+        -- (* Case: q_r_proj q = Mut *)  
+          rewrite HqMut in Hqual.
+          simpl in Hqual.
+          unfold is_true in Hqual.
+          discriminate Hqual.
+        -- 
+          apply Hqxnonexist.
+          exists a.
+          exact H17. 
+        + 
+        assert (Hvals_eq : vals' = [f0 ↦ v2] (vals)).
+        {
+          (* Use the definition of update_field and the fact that h' contains the updated object *)
           unfold update_field in H9.
           rewrite H0 in H9.
-          simpl in H9.
-          (* H10: h' = [lx ↦ {|...; fields_map := update f0 v2 vals |>] h *)
-          (* Since l = lx (same object), we need to show the field f is preserved *)
-          assert (Hfield_preserved : nth_error vals' f = nth_error vals f).
+          rewrite H9 in H4.
+          unfold runtime_getObj in H4.
+          (* Apply update_same to get the updated object *)
+          assert (Hget_same : nth_error (update lx {| rt_type := {| rqtype := Imm_r; rctype := C |}; fields_map := [f0 ↦ v2] (vals) |} h) lx = 
+                              Some {| rt_type := {| rqtype := Imm_r; rctype := C |}; fields_map := [f0 ↦ v2] (vals) |}).
           {
-            (* Extract vals' from H4 *)
-            rewrite H9 in H4.
-            rewrite runtime_getObj_update_same in H4.
-            - (* Show lx < dom h *)
-              apply runtime_getObj_dom in H0. exact H0.
-            - simpl in H4.
-              injection H4 as H4_eq.
-              subst vals'.
-              (* Now use field_update_preserves_other_fields *)
-              apply field_update_preserves_other_fields.
-              symmetry. exact Hneq_f.
+            apply update_same.
+            exact H.
           }
-          rewrite Hfield_preserved.
-          reflexivity.
-      - (* Case: l ≠ lx (different object) *)
-        (* Field write to object lx doesn't affect object l *)
-        unfold update_field in H9.
-        rewrite H6 in H9.
-        simpl in H9.
-        (* Now H10: h' = [lx ↦ o <| fields_map := update f0 v2 (fields_map o) |>] h *)
-        (* Use the fact that l ≠ lx to show runtime_getObj h' l = runtime_getObj h l *)
-        assert (Hunchanged : runtime_getObj h' l = runtime_getObj h l).
-        {
-          rewrite H9.
-          apply runtime_getObj_update_diff.
-          symmetry. exact Hneq_l.
+          rewrite Hget_same in H4.
+          injection H4 as H4_eq.
+          symmetry. exact H4_eq.
         }
-        rewrite Hunchanged in H4.
-        rewrite H0 in H4.
-        injection H4 as H4_eq.
-        subst vals'.
+        rewrite Hvals_eq.
+        unfold getVal.
+        rewrite update_diff.
+        symmetry. exact Hneq_f.
         reflexivity.
+    -
+    assert (Hl_unchanged : runtime_getObj h' l = runtime_getObj h l).
+    {
+      rewrite H9.
+      unfold update_field.
+      destruct (runtime_getObj h lx) as [o'|] eqn:Hlx_obj.
+      - (* Case: Some o' *)
+        injection H6 as H6_eq. subst o'.
+        unfold runtime_getObj.
+        apply update_diff.
+        symmetry. exact Hneq_l.
+      - (* Case: None - contradicts H6 *)
+        rewrite H6 in Hlx_obj.
+        discriminate.
     }
+    rewrite H0 in Hl_unchanged.
+    rewrite Hl_unchanged in H4.
+    injection H4 as H4_eq.
+    rewrite <- H4_eq.
+    reflexivity.
+  }
   - (* New *) (* h' = h ++ [new_obj], so l < dom h means same object *)
   intros.
   inversion H4; subst.
@@ -1471,7 +1306,8 @@ Proof.
   (* specialize (IHeval_stmt H H0 Hwf_method Htyping_method H4) as IH.
   exact IH. *)
   admit.
-  - (* Seq *) (* Apply IH transitively *) 
+  - (* Seq *) (* Apply IH transitively *)
+  admit.
 Admitted.
 
 Theorem readonly_pico :
