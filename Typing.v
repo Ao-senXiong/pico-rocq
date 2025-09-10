@@ -39,7 +39,7 @@ Definition sf_def_rel (CT: class_table) (C: class_name) (f: var) (fdef: field_de
 Definition sf_assignability_rel (CT: class_table) (C: class_name) (f: var) (a: a) : Prop :=
   exists fdef, FieldLookup CT C f fdef /\ assignability (ftype fdef) = a.
 
-Definition sf_mutability_rel (CT: class_table) (C: class_name) (f: var) (q: q_f) : Prop :=
+Definition sf_mutability_rel (CT: class_table) (C: class_name) (f: var) (q: q) : Prop :=
   exists fdef, FieldLookup CT C f fdef /\ mutability (ftype fdef) = q.
 
 Definition sf_base_rel (CT: class_table) (C: class_name) (f: var) (base: class_name) : Prop :=
@@ -359,6 +359,52 @@ Definition constructor_sig_lookup (CT : class_table) (C : class_name) : option c
   | None => None
   end.
 
+Lemma constructor_def_lookup_dom : forall CT C ctor,
+  constructor_def_lookup CT C = Some ctor ->
+  C < dom CT.
+Proof.
+  intros CT C ctor H.
+  unfold constructor_def_lookup in H.
+  destruct (find_class CT C) as [def|] eqn:Hfind; [|discriminate].
+  apply find_class_dom in Hfind.
+  exact Hfind.
+Qed.
+
+Lemma constructor_sig_lookup_dom : forall CT C csig,
+  constructor_sig_lookup CT C = Some csig ->
+  C < dom CT.
+Proof.
+  intros CT C csig H.
+  unfold constructor_sig_lookup in H.
+  destruct (constructor_def_lookup CT C) as [ctor|] eqn:Hctor; [|discriminate].
+  apply constructor_def_lookup_dom in Hctor.
+  exact Hctor.
+Qed.
+
+Lemma constructor_def_lookup_Some : forall CT C,
+  C < dom CT ->
+  exists ctor, constructor_def_lookup CT C = Some ctor.
+Proof.
+  intros CT C H.
+  apply find_class_Some in H.
+  destruct H as [def Hdef].
+  unfold constructor_def_lookup.
+  rewrite Hdef.
+  eexists. reflexivity.
+Qed.
+
+Lemma constructor_sig_lookup_Some : forall CT C,
+  C < dom CT ->
+  exists csig, constructor_sig_lookup CT C = Some csig.
+Proof.
+  intros CT C H.
+  apply constructor_def_lookup_Some in H.
+  destruct H as [ctor Hctor].
+  unfold constructor_sig_lookup.
+  rewrite Hctor.
+  eexists. reflexivity.
+Qed.  
+
 (* Helper to compare class names *)
 Definition eq_class_name (c1 c2 : class_name) : bool :=
   match c1, c2 with
@@ -413,21 +459,15 @@ Definition method_body_lookup (CT : class_table) (C : class_name) (m : method_na
 (* Well-formedness of type use *)
 Definition wf_stypeuse (CT : class_table) (q1: q) (c: class_name) : Prop :=
   match bound CT c with
-  | Some q_c_val => q_subtype (vpa_mutabilty q1 (q_c_proj (q_c_val))) q1 /\ 
+  | Some q_c_val => q_subtype (vpa_mutabilty q1 q_c_val) q1 /\ 
                    c < dom CT
   | None => False (* or False, depending on your semantics *)
   end.
 
-Definition wf_s_typeuse (CT : class_table) (t : qualified_type) : Prop :=
-  match bound CT t.(sctype) with
-  | Some q_c => q_subtype (vpa_mutabilty t.(sqtype) (q_c_proj (q_c))) t.(sqtype) /\ 
-                   t.(sctype) < dom CT
-  | None => False
-  end.
-
 (* Well-formedness of field *)
-Definition wf_field (CT : class_table) (f: field_def) : Prop :=
-  wf_stypeuse CT (q_f_proj (mutability (ftype f))) (f_base_type (ftype f)).
+Definition wf_field (CT : class_table) (fdef: field_def) : Prop :=
+  is_q_f (mutability (ftype fdef)) /\
+  wf_stypeuse CT (mutability (ftype fdef)) (f_base_type (ftype fdef)).
 
 (* Well-formedness of static environment *)
 Definition wf_senv (CT : class_table) (sΓ : s_env) : Prop :=
@@ -475,7 +515,7 @@ Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop
       wf_senv CT Γ ->
       static_getType Γ x = Some T ->
       sf_def_rel CT (sctype T) f fDef ->
-      expr_has_type CT Γ (EField x f) (vpa_type_to_type T (Build_qualified_type (q_f_proj (mutability (ftype fDef))) (f_base_type (ftype fDef))))
+      expr_has_type CT Γ (EField x f) (vpa_type_to_type T (Build_qualified_type (mutability (ftype fDef)) (f_base_type (ftype fDef))))
 .
 
 Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
@@ -510,12 +550,12 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       sf_def_rel CT (sctype Tx) f fieldT ->
       sf_assignability_rel CT (sctype Tx) f a ->
       (* TODO: define a helper method to get the adapated type *)
-      qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Tx) (Build_qualified_type (q_f_proj (mutability (ftype fieldT))) (f_base_type (ftype fieldT)))) ->
+      qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Tx) (Build_qualified_type (mutability (ftype fieldT)) (f_base_type (ftype fieldT)))) ->
       vpa_assignability (sqtype Tx) a = Assignable ->
       stmt_typing CT sΓ (SFldWrite x f y) sΓ
 
   (* Object creation *)
-  | S_New : forall CT sΓ x Tx (qc:q_c) C args argtypes n1 consig consreturn,
+  | S_New : forall CT sΓ x Tx (qc:q) C args argtypes n1 consig consreturn,
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType_list sΓ args = Some argtypes ->
@@ -523,10 +563,11 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       x <> 0 ->
       length consig.(sparams) = n1 ->
       consig.(cqualifier) = consreturn ->
-      vpa_mutabilty (q_c_proj qc) (q_c_proj consreturn) = q_c_proj qc ->
-      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj qc) T)) (firstn n1 argtypes) consig.(sparams) ->
-      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj qc) T)) (skipn n1 argtypes) consig.(cparams) ->
-      qualified_type_subtype CT (Build_qualified_type (q_c_proj qc) C) Tx ->
+      is_q_c qc ->
+      vpa_mutabilty qc consreturn = qc ->
+      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type qc T)) (firstn n1 argtypes) consig.(sparams) ->
+      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type qc T)) (skipn n1 argtypes) consig.(cparams) ->
+      qualified_type_subtype CT (Build_qualified_type qc C) Tx ->
       stmt_typing CT sΓ (SNew x qc C args) sΓ
 
   (* Method call *)
@@ -567,7 +608,7 @@ Proof.
   inversion Htyping; subst.
   (* Extract the Forall2 hypotheses *)
   apply Forall2_length in H15. (* firstn n1 argtypes ~ sparams *)
-  apply Forall2_length in H14. (* skipn n1 argtypes ~ cparams *)
+  apply Forall2_length in H16. (* skipn n1 argtypes ~ cparams *)
   rewrite Hconsig in H6.
   injection H6 as Hconsig_eq.
   subst consig0.
@@ -582,7 +623,7 @@ Proof.
     rewrite length_skipn.
     lia.
   }
-  rewrite H14 in Hfirstn_skipn.
+  rewrite H16 in Hfirstn_skipn.
   rewrite H15 in Hfirstn_skipn.
   (* Connect argtypes length with args length *)
   assert (Hargs_argtypes : dom argtypes = dom args).
@@ -595,43 +636,6 @@ Proof.
 Qed.
 
 Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop :=
-
-  (* Object case + no fields class *)
-  (* | WFObjectConstructor : forall CT C ctor,
-    fields CT C = [] -> (* Object root class's constructor assumed to be wellformed, other checks should be done at WFClass *)
-    constructor_def_lookup CT C = Some ctor ->
-    ctor.(csignature).(sparams) = [] -> (* No parameters for Object + no field class constructor *)
-    ctor.(csignature).(cparams) = [] -> (* No parameters for Object + no field class constructor *)
-    wf_constructor CT C ctor
-
-  (* Only the this class have fields *)
-  | WFSuperObjectConstructor: forall CT C ctor superclass_name this_fields this_params,
-    parent CT C = Some superclass_name ->
-    constructor_def_lookup CT C = Some ctor ->
-    let sig := csignature ctor in
-    let q_c := cqualifier sig in
-    let ccon := ctor_type sig in
-    (* constructor mutability qualifier is same as bound; Constructor name is the same as class name *)
-    Some q_c = bound CT C /\ ccon = C -> 
-    ctor.(csignature).(sparams) = [] -> (* No parameters for Object + no field class constructor *)
-    fields CT superclass_name = [] -> (* Superclass don't have fields *)
-    fields CT C = this_fields -> (* This class has fields *)
-    ctor.(csignature).(cparams) = this_params  -> 
-    (* Parameter types are wellformed *)
-    Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (this_params) ->
-    length this_fields = length this_params -> (* The number of fields and parameters are the same *)
-    (* Constructor body well-formedness *)
-    let ctypes := cparams sig in 
-    let body := cbody ctor in
-    let list_assignment := assignments body in
-    (* 1. The assignments in this constructor has the same length as fields for this class *)
-    Forall (fun '(f1, f2) =>
-    match sf_mutability CT C f1, sf_base CT C f1, nth_error ctypes f2 with
-    | Some mf, Some Cf, Some T2 => qualified_type_subtype CT (vpa_qualified_type (q_c_proj q_c) (Build_qualified_type (q_f_proj mf) Cf)) (vpa_qualified_type (q_c_proj q_c) T2)
-    | _, _, _ => False
-    end) list_assignment ->
-    wf_constructor CT C ctor *)
-
   (* Other case: super class and this class both have fields *)
   | WFConstructorInductive: forall CT C ctor superclass_name super_fields_def this_fields_def super_bound supercons_sig,
     parent CT C = Some superclass_name ->
@@ -663,19 +667,19 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
     sf_base_rel CT C f1 Cf /\
     nth_error ctypes f2 = Some T2 /\
     qualified_type_subtype CT 
-      (vpa_qualified_type (q_c_proj q_c) (Build_qualified_type (q_f_proj mf) Cf)) 
-      (vpa_qualified_type (q_c_proj q_c) T2)
+      (vpa_qualified_type q_c (Build_qualified_type mf Cf)) 
+      (vpa_qualified_type q_c T2)
 ) list_assignment ->
     (* 4 Constructor supercall wellformed *)
     (* 4.1 Bound compatibility *)
     bound CT superclass_name = Some super_bound ->
     let stypes := sparams sig in
-    vpa_mutabilty (q_c_proj q_c) (q_c_proj super_bound) = (q_c_proj q_c) /\
+    vpa_mutabilty q_c super_bound = q_c /\
     (* 4.2 Argument types are adapted subtype of Parameter type of super constructor *)
     constructor_sig_lookup CT superclass_name = Some supercons_sig -> 
     let super_full_params := sparams supercons_sig ++ cparams supercons_sig in 
     length super_full_params = length stypes ->
-    Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (q_c_proj q_c) T)) stypes super_full_params ->
+    Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type q_c T)) stypes super_full_params ->
     wf_constructor CT C ctor
   .
 
@@ -744,7 +748,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
 (* Object class *)
 | WFObjectDef: forall CT cdef class_name,
   cdef.(signature).(super) = None ->
-  q_c_proj(cdef.(signature).(class_qualifier)) = RDM ->
+  (cdef.(signature).(class_qualifier)) = RDM ->
   cdef.(body).(Syntax.fields) = [] ->
   cdef.(body).(methods) = [] ->
   cdef.(signature).(cname) = class_name ->
@@ -754,6 +758,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
 
 (* Other object *) 
 | WFOtherDef: forall CT cdef superC thisC, 
+  is_q_c (class_qualifier (signature cdef)) ->
   cdef.(signature).(super) = Some superC -> (* Not Object class *)
   cdef.(signature).(cname) = thisC ->
   thisC > superC -> (* index of current class must be greater than super class *)
@@ -766,7 +771,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   match bound CT superC with
   | Some q_super => 
       exists fs, CollectFields CT C fs /\
-      vpa_mutabilty (q_c_proj qC) (q_c_proj q_super) = q_c_proj qC /\ 
+      vpa_mutabilty qC q_super = qC /\ 
       Forall (wf_field CT) fs
   | None => 
       CollectFields CT C []
@@ -872,7 +877,7 @@ Proof.
   rewrite H4 in Hown_field.
   simpl in Hown_field.
   destruct (f - dom parent_fields) as [|ntest]; simpl in Hown_field; discriminate Hown_field.
-  destruct H5 as [Hwf_ctor [Hwf_methods Hbound_case]].
+  destruct H6 as [Hwf_ctor [Hwf_methods Hbound_case]].
   destruct (bound CT superC) as [q_super|] eqn:Hbound.
   ++ (* Some q_super case *)
     destruct Hbound_case as [fs [Hcf_fs [Hvpa Hwf_fs]]].
@@ -943,12 +948,12 @@ Proof.
     }
     unfold wf_field, wf_stypeuse in Hwf_field.
     destruct (bound CT (f_base_type (ftype fDef))) as [qc|] eqn:Hbound.
-    + destruct Hwf_field as [_ Hdom].
-    rewrite vpa_type_to_type_sctype.
+    + destruct Hwf_field as [_ [_ Hdom]].
+      rewrite vpa_type_to_type_sctype.
       simpl.
       exact Hdom.
-    + contradiction Hwf_field.
-Qed.    
+    + unfold bound in Hbound. destruct Hwf_field as [_ Hfalse]. contradiction Hfalse.
+Qed.
 
 (* Well-formedness of program  Aosen: I put it at the end because the main statement need to be well-typed*)
 (* Definition WFProgram (p: program_def) : Prop :=

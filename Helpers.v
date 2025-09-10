@@ -816,6 +816,29 @@ Qed. *)
 
 (* Static helpers *)
 
+Lemma gget_Some : forall {A : Type} (l : list A) (n : nat),
+  n < length l ->
+  exists x, gget l n = Some x.
+Proof.
+  intros A l n H.
+  unfold gget.
+  destruct (nth_error l n) as [x|] eqn:Hnth.
+  - exists x. reflexivity.
+  - exfalso.
+    apply nth_error_None in Hnth.
+    lia.
+Qed.
+
+Lemma gget_None : forall {A : Type} (l : list A) (n : nat),
+  n >= length l ->
+  gget l n = None.
+Proof.
+  intros A l n H.
+  unfold gget.
+  apply nth_error_None.
+  exact H.
+Qed.
+
 (* Find a class declaration in the class table *)
 Definition find_class (CT : class_table) (C : class_name) : option class_def :=
     gget CT C.
@@ -835,8 +858,26 @@ Proof.
   exact H.
 Qed.
 
+Lemma find_class_Some : forall CT C,
+  C < dom CT -> exists def, find_class CT C = Some def.
+Proof.
+  intros CT C H.
+  unfold find_class.
+  apply gget_Some.
+  exact H.
+Qed.
+
+Lemma find_class_None : forall CT C,
+  C >= dom CT -> find_class CT C = None.
+Proof.
+  intros CT C H.
+  unfold find_class.
+  apply gget_None.
+  exact H.
+Qed.
+
 (* Class bound look up in the class table  *)
-Definition bound (CT : class_table) (C : class_name) : option q_c :=
+Definition bound (CT : class_table) (C : class_name) : option q :=
   match find_class CT C with
   | Some decl => Some (class_qualifier (signature decl))
   | None => None
@@ -848,6 +889,58 @@ Definition parent (CT : class_table) (C : class_name) : option class_name :=
   | Some def => super (signature def)
   | None => None
   end.
+
+Lemma bound_some_dom : forall CT C q,
+  bound CT C = Some q -> C < dom CT.
+Proof.
+  intros CT C q H.
+  unfold bound in H.
+  destruct (find_class CT C) as [decl|] eqn:Hfind; [|discriminate].
+  apply find_class_dom in Hfind.
+  exact Hfind.
+Qed.
+
+Lemma bound_dom_some : forall CT C,
+  C < dom CT -> exists q, bound CT C = Some q.
+Proof.
+  intros CT C H.
+  unfold bound.
+  assert (Hfind : exists decl, find_class CT C = Some decl).
+  {
+    unfold find_class.
+    apply gget_Some.
+    exact H.
+  }
+  destruct Hfind as [decl Hfind].
+  rewrite Hfind.
+  exists (class_qualifier (signature decl)).
+  reflexivity.
+Qed.
+
+Lemma bound_none_geq_dom : forall CT C,
+  C >= dom CT -> bound CT C = None.
+Proof.
+  intros CT C H.
+  unfold bound.
+  assert (Hfind : find_class CT C = None).
+  {
+    unfold find_class.
+    apply gget_None.
+    exact H.
+  }
+  rewrite Hfind.
+  reflexivity.
+Qed.
+
+Lemma bound_none_dom : forall CT C,
+  bound CT C = None -> C >= dom CT.
+Proof.
+  intros CT C H.
+  unfold bound in H.
+  destruct (find_class CT C) as [decl|] eqn:Hfind; [discriminate|].
+  apply find_class_not_dom in Hfind.
+  exact Hfind.
+Qed.
 
 Lemma Forall_update : forall {A : Type} (P : A -> Prop) (l : list A) (n : nat) (v : A),
   Forall P l ->

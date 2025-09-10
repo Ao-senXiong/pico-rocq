@@ -20,14 +20,9 @@ Inductive q : Type :=
   | Lost
   | Bot.
 
-Definition q_c := { x : q | x = Mut \/ x = Imm \/ x = RDM }.
-Definition q_f := { x : q | x = Rd \/ x = Mut \/ x = Imm \/ x = RDM }.
-Definition q_h := { x : q | x = Lost \/ x = Bot }.
-
-(* canonical projection *)
-Definition q_c_proj (x : q_c) : q := proj1_sig x.
-Definition q_f_proj (x : q_f) : q := proj1_sig x.
-Definition q_h_proj (x : q_h) : q := proj1_sig x.
+Definition is_q_c (x : q) : Prop := x = Mut \/ x = Imm \/ x = RDM.
+Definition is_q_f (x : q) : Prop := x = Rd \/ x = Mut \/ x = Imm \/ x = RDM.
+Definition is_q_h (x : q) : Prop := x = Lost \/ x = Bot.
 
 (* Assignability qualifier *)
 Inductive a : Type :=
@@ -58,14 +53,14 @@ Inductive stmt: Type :=
   | SLocal: qualified_type -> var -> stmt (* T x*)
   | SVarAss: var -> expr -> stmt (* x = e *)
   | SFldWrite: var -> var -> var -> stmt (* x.f = y *)
-  | SNew: var -> q_c -> class_name -> list var -> stmt (* x = new q_c C(y1, ..., yn) *)
+  | SNew: var -> q -> class_name -> list var -> stmt (* x = new q_c C(y1, ..., yn) *)
   | SCall: var -> var -> method_name -> list var -> stmt (* x = y.m(z1, ..., zn) *)
   (* | SCast: var -> q -> class_name -> var -> stmt x = (q C) y  *)
   | SSeq: stmt -> stmt -> stmt. (* s1; s2 *)
 
 Record field_type := {
   assignability: a;
-  mutability: q_f;
+  mutability: q;
   f_base_type : class_name;
 }.
 
@@ -81,7 +76,7 @@ Record constructor_body :={
 }.
 
 Record constructor_sig := {
-  cqualifier: q_c; (* Mutable, Immutable, or RDM *)
+  cqualifier: q; (* Mutable, Immutable, or RDM *)
   sparams : list qualified_type; (* T x1, ..., T xn Parameters for super call *) (*s -> super*)
   cparams : list qualified_type; (* T y1, ..., T yn Parameters for field assignment *) (*c -> current*)
 }.
@@ -115,7 +110,7 @@ Record class_body := {
 }.
 
 Record class_sig := {
-  class_qualifier : q_c; (* Mutable, Immutable, or RDM *)
+  class_qualifier : q; (* Mutable, Immutable, or RDM *)
   cname : class_name; (* Class name, need to be the same as the index from class_table *)
   super : option class_name; (* Superclass name *)
 }.
@@ -141,13 +136,23 @@ Definition class_table := list class_def.
   | inited. *)
 
 (* Runtime mutability type *)
-Definition q_r := { x : q | x = Mut \/ x = Imm }.
-Definition q_r_proj (x : q_r) : q := proj1_sig x.
+Inductive q_r : Type :=
+  (* q_c *)
+  | Mut_r
+  | Imm_r
+  .
+(* Definition q_r := { x : q | x = Mut \/ x = Imm }. *)
+
+Definition q_r_proj (x : q_r) : q := 
+match x with
+| Mut_r => Mut
+| Imm_r => Imm
+end.
 
 Definition q_project_q_r (q : q) : option q_r :=
   match q with
-  | Mut => Some (exist _ Mut (or_introl eq_refl))
-  | Imm => Some (exist _ Imm (or_intror eq_refl))
+  | Mut => Some Mut_r
+  | Imm => Some Imm_r
   | _ => None
   end.
 
