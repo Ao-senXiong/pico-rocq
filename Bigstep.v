@@ -861,6 +861,27 @@ Proof.
   apply update_length.
 Qed.
 
+(* evaluation preserves runtime type on heap. *)
+Lemma runtime_preserves_r_type_heap : forall rΓ h loc C h' vals s rΓ',
+  runtime_getObj h loc = Some {| rt_type := C; fields_map := vals |}->
+  eval_stmt OK rΓ h s OK rΓ' h' ->
+  exists vals', runtime_getObj h' loc = Some {| rt_type := C; fields_map := vals' |}.
+Proof.
+  intros. remember OK as ok. induction H0; subst; try discriminate.
+  1-3: exists vals; assumption.
+  - (* SBS_FldWrite *)
+    destruct (Nat.eq_dec loc lx).
+    + subst lx. rewrite H1 in H. inversion H; subst.
+      exists (update f v2 vals). unfold runtime_getObj.
+      unfold update_field. rewrite H1. simpl.
+      rewrite update_hit; auto. apply runtime_getObj_dom in H1; auto.
+    + exists vals.
+      admit.
+  - (* SBS_New *)
+    exists vals.
+    unfold runtime_getObj.
+Admitted.
+
 Lemma Forall2_length : forall {A B} (P : A -> B -> Prop) l1 l2,
   Forall2 P l1 l2 ->
   List.length l1 = List.length l2.

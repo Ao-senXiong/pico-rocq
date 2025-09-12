@@ -148,6 +148,16 @@ Proof.
   eauto using update_same.
 Qed.
 
+Lemma update_hit :
+  forall X p v (l: list X),
+    p < (length l) ->
+    nth_error [p ↦ v]l p = Some v.
+Proof.
+  induction p; intros; destruct l; move => //=.
+  1,2: inversion H. apply IHp. assert (dom (x :: l) = S (dom l)). induction l; simpl; lia. 
+  rewrite H0 in H. lia.
+Qed.
+
 Lemma update_diff :
   forall X p p' v (l: list X),
     p <> p' ->

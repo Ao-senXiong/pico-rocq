@@ -1635,7 +1635,16 @@ Proof.
   intros. remember OK as ok.
   generalize dependent sΓ.
   generalize dependent sΓ'.
+  (* generalize dependent vals. generalize dependent vals'.
+  generalize dependent sΓ. generalize dependent sΓ'. *)
   induction H3; try discriminate.
+  (* 7:{ inversion H2; subst.
+    (* replace the assertions with eval_stmt_preserves_heap_domain. *)
+    assert (dom h <= dom h') by admit.
+    assert (l < dom h') by lia. specialize (runtime_getObj_Some h' l H6) as [C' [values' Hh']].
+    assert (C' = {| rqtype := Imm_r; rctype := C |}).
+    {  }
+    specialize (IHeval_stmt1 H Heqok sΓ sΓ'0 H1 H9 vals H0 vals'). exact IHeval_stmt. } *)
   - (* Skip *) inversion H4. intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* Local *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* VarAss *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
