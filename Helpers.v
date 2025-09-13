@@ -956,3 +956,37 @@ Proof.
     + simpl. constructor; [exact H_v | inversion H_forall; exact H2].
     + simpl. constructor; [inversion H_forall; exact H1 | apply IH; [inversion H_forall; exact H2 | simpl in H_bound; lia]].
 Qed.
+
+Lemma nth_error_Some_exists : forall {A : Type} (l : list A) (i : nat),
+  i < length l ->
+  exists x, nth_error l i = Some x.
+Proof.
+  intros A l i H.
+  destruct (nth_error l i) as [x|] eqn:Hnth.
+  - exists x. reflexivity.
+  - exfalso.
+    apply nth_error_None in Hnth.
+    lia.
+Qed.
+
+Lemma Forall2_nth_error : forall {A B : Type} (P : A -> B -> Prop) (l1 : list A) (l2 : list B) (i : nat) (a : A) (b : B),
+  Forall2 P l1 l2 ->
+  nth_error l1 i = Some a ->
+  nth_error l2 i = Some b ->
+  P a b.
+Proof.
+  intros A B P l1 l2 i a b H Ha Hb.
+  generalize dependent i.
+  induction H; intros i Ha Hb.
+  - (* Empty lists *)
+    destruct i; discriminate Ha.
+  - (* Non-empty lists *)
+    destruct i as [|i'].
+    + (* i = 0 *)
+      simpl in Ha, Hb.
+      injection Ha as Ha_eq. injection Hb as Hb_eq.
+      subst. exact H.
+    + (* i = S i' *)
+      simpl in Ha, Hb.
+      eapply IHForall2; eauto.
+Qed.

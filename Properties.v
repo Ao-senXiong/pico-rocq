@@ -3,8 +3,496 @@ Require Import List.
 Import ListNotations.
 Require Import String.
 From RecordUpdate Require Import RecordUpdate.
-Require Import Coq.Logic.Classical_Prop.
-Require Import NZOrder.
+
+Lemma method_lookup_wf_class: forall CT C m mdef,
+  wf_class_table CT ->
+  wf_class CT C ->
+  method_def_lookup CT (cname (signature C)) m = Some mdef ->
+  wf_method CT (cname (signature C)) mdef.
+Proof.
+  intros CT C m mdef Hwf_ct Hwf_class Hlookup.
+  inversion Hwf_class; subst.
+  - (* WFObjectDef case *)
+    exfalso.
+    unfold method_def_lookup in Hlookup.
+    unfold mdef_lookup in Hlookup.
+    destruct (dom CT) as [|fuel]; [discriminate|].
+    simpl in Hlookup.
+    assert (Hfind_class : find_class CT (cname (signature C)) = Some C).
+    { 
+      apply wf_class_in_table.
+      exact Hwf_ct.
+      exact Hwf_class.
+      assert (Hfind_succeeded : exists def, find_class CT (cname (signature C)) = Some def).
+      {
+        (* Since the method lookup succeeded, find_class must have succeeded *)
+        unfold method_def_lookup in Hlookup.
+        unfold mdef_lookup in Hlookup.
+        destruct (find_class CT (cname (signature C))) as [def|] eqn:Hfind.
+        - exists def. reflexivity.
+        - (* If find_class failed, then method lookup would fail *)
+          discriminate Hlookup.
+      }
+
+      (* If find_class succeeded, then the index is in bounds *)
+      destruct Hfind_succeeded as [def Hfind].
+      apply find_class_dom in Hfind.
+      exact Hfind.
+    }
+    rewrite Hfind_class in Hlookup.
+    simpl in Hlookup.
+    rewrite H2 in Hlookup.
+    simpl in Hlookup.
+    rewrite H in Hlookup.
+    discriminate.
+  - (* WFOtherDef case *)
+    {
+      destruct H3 as [_ [Hwf_methods _]].
+      unfold method_def_lookup in Hlookup.
+      unfold mdef_lookup in Hlookup.
+      remember (dom CT) as fuel.
+      generalize dependent mdef.
+      generalize dependent m.
+      generalize dependent C.
+      induction fuel as [|fuel' IH]; intros C m mdef Hlookup.
+
+      - (* Base case: fuel = 0 *)
+        simpl in Hlookup.
+        unfold wf_class_table in Hwf_ct.
+        destruct Hwf_ct as [Hforall_wf [Hobject Hclassnamematch]].
+        exfalso.
+        destruct Hobject as [obj_def [Hfind_obj _]].
+        unfold find_class, gget in Hfind_obj.
+        rewrite Heqfuel in Hfind_obj.
+        simpl in Hfind_obj.
+        assert (Hdom_zero : dom CT = 0) by (symmetry; exact Heqfuel).
+        rewrite Hdom_zero in Hfind_obj.
+        assert (H_contra : 0 < dom CT).
+        {
+          apply nth_error_Some.
+          rewrite Hfind_obj.
+          discriminate.
+        }
+        rewrite Hdom_zero in H_contra.
+        lia.
+
+      - (* Inductive case: fuel = S fuel' *)
+        simpl in Hlookup.
+        destruct (find_class CT (cname (signature C))) as [def|] eqn:Hfind.
+        + (* Class found *)
+          admit.
+              
+        + (* Class not found *)
+          admit.
+    }
+Admitted. 
+
+Lemma method_lookup_wf : forall CT C m mdef,
+  wf_class_table CT ->
+  method_def_lookup CT C m = Some mdef ->
+  wf_method CT C mdef.
+Proof.
+  intros CT C m mdef Hwf_ct Hlookup.
+  unfold wf_class_table in Hwf_ct.
+  destruct Hwf_ct as [Hforall_wf _].
+  unfold method_def_lookup in Hlookup.
+  unfold mdef_lookup in Hlookup.
+  generalize dependent mdef.
+  generalize dependent m.
+  induction CT as [|cdef CT' IH]; intros m mdef Hlookup.
+  - (* Empty CT case *)
+    simpl in Hlookup.
+    destruct C; discriminate.
+  - (* Non-empty CT case *)
+    simpl in Hlookup.
+    destruct C as [|C'].
+    + (* C = 0, method is in first class *)
+      inversion Hforall_wf; subst.
+      destruct (find (fun mdef => eq_method_name (mname (msignature mdef)) m) (methods (body cdef))) as [found_mdef|] eqn:Hfind.
+      * (* Method found in current class *)
+        (* subst mdef. *)
+        (* Extract method well-formedness from class well-formedness *)
+        inversion H1; subst.
+        -- (* WFObjectDef case *)
+          admit.
+          (* rewrite H7 in Hfind. simpl in Hfind. discriminate. *)
+        -- (* WFOtherDef case *)
+          destruct H5 as [_ [Hwf_methods _]].
+          apply find_some in Hfind.
+          destruct Hfind as [Hin Heq_name].
+          eapply Forall_forall; eauto.
+          admit.
+      * (* Method not in current class, check superclass *)
+        admit. (* Handle superclass lookup *)
+    + (* C = S C', recurse *)
+      admit.
+Admitted.
+
+Lemma method_body_well_typed : forall CT C m mdef,
+  wf_class_table CT ->
+  method_def_lookup CT C m = Some mdef ->
+  exists sΓ', stmt_typing CT (mreceiver (msignature mdef) :: mparams (msignature mdef)) 
+                           (mbody_stmt (mbody mdef)) 
+                           sΓ'.
+Proof.
+  intros CT C m mdef Hwf_ct Hlookup.
+  apply method_lookup_wf in Hlookup; auto.
+  inversion Hlookup; subst.
+  - (* WFPlainMethod case *)
+  admit.
+  - (* WFOverridingMethod case *)
+  admit.
+Admitted.
+
+Lemma wf_method_sig_types : forall CT C mdef,
+  wf_method CT C mdef ->
+  wf_stypeuse CT (sqtype (mreceiver (msignature mdef))) (sctype (mreceiver (msignature mdef))) /\
+  Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (mparams (msignature mdef)).
+Proof.
+  intros CT C mdef Hwf_method.
+  inversion Hwf_method; subst.
+  - (* WFPlainMethod case *)
+    admit. (* Extract well-formedness from method typing context *)
+  - (* WFOverridingMethod case *)
+    admit. (* Extract well-formedness from method typing context *)
+Admitted.
+
+Lemma method_sig_wf : forall CT C m m_sig,
+  wf_class_table CT ->
+  method_sig_lookup CT C m = Some m_sig ->
+  wf_stypeuse CT (sqtype (mreceiver m_sig)) (sctype (mreceiver m_sig)) /\
+  Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (mparams m_sig).
+Proof.
+  intros CT C m m_sig Hwf_ct Hlookup.
+  unfold method_sig_lookup in Hlookup.
+  unfold method_sig_lookup in Hlookup.
+  destruct (mdef_lookup (dom CT) CT C m) as [mdef|] eqn:Hmdef; [|discriminate].
+  injection Hlookup as Heq. subst m_sig.
+  apply method_lookup_wf in Hmdef; auto.
+  unfold method_def_lookup in Hmdef.
+  apply wf_method_sig_types in Hmdef.
+  exact Hmdef.
+Qed.
+
+Lemma method_sig_wf_from_def: forall CT C m mdef m_sig,
+  wf_class_table CT ->
+  method_def_lookup CT C m = Some mdef ->
+  m_sig = (msignature mdef) ->
+  wf_stypeuse CT (sqtype (mreceiver m_sig)) (sctype (mreceiver m_sig)) /\
+  Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (mparams m_sig).
+Proof.
+  intros CT C m mdef m_sig Hwf_ct Hlookup.
+  intros Heq.
+  subst m_sig.
+  apply method_lookup_wf in Hlookup; auto.
+  apply wf_method_sig_types in Hlookup.
+  exact Hlookup.
+Qed.
+
+Lemma method_frame_wf_r_config : forall CT sΓ rΓ h y ly Ty vals m_sig args argtypes C m,
+  wf_r_config CT sΓ rΓ h ->
+  runtime_getVal rΓ y = Some (Iot ly) ->
+  static_getType sΓ y = Some Ty ->
+  runtime_lookup_list rΓ args = Some vals ->
+  static_getType_list sΓ args = Some argtypes ->
+  qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreceiver m_sig)) ->
+  Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (sqtype Ty) T)) 
+          argtypes (mparams m_sig) ->
+  method_sig_lookup CT C m = Some m_sig ->
+  wf_r_config CT (mreceiver m_sig :: mparams m_sig) 
+              {| vars := Iot ly :: vals |} h.
+Proof.
+  intros.
+  unfold wf_r_config.
+  repeat split.
+  destruct H as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+  unfold wf_class_table in Hclass.
+  destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+  exact Hclass.
+  destruct H as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+  destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+  exact Hobj.
+  destruct H as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+  destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+  exact Hotherclasses.
+  destruct H as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+  destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+  apply Hcname_consistent.
+  destruct H as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+  destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+  apply Hcname_consistent.
+
+  destruct H as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+  exact Hheap.
+  simpl.
+  lia.
+  {
+    exists ly.
+    split.
+    simpl.
+    reflexivity.
+    destruct H as [_ [_ [_ [_ [_ Hcorr]]]]].
+    specialize (Hcorr y).
+    assert (Hy_dom : y < dom sΓ).
+    { apply static_getType_dom in H1. exact H1. }
+    specialize (Hcorr Hy_dom Ty H1).
+    rewrite H0 in Hcorr.
+    unfold wf_r_typable in Hcorr.
+    destruct (r_type h ly) as [rqt|] eqn:Hrtype; [|contradiction].
+    apply r_type_dom in Hrtype.
+    exact Hrtype.
+  }
+  {
+    simpl.
+    constructor.
+    simpl.
+    destruct H as [_ [_ [_ [_ [_ Hcorr]]]]].
+    specialize (Hcorr y).
+    assert (Hy_dom : y < dom sΓ).
+    { apply static_getType_dom in H1. exact H1. }
+    specialize (Hcorr Hy_dom Ty H1).
+    rewrite H0 in Hcorr.
+    unfold wf_r_typable in Hcorr.
+    destruct (r_type h ly) as [rqt|] eqn:Hrtype; [|contradiction].
+    unfold r_type in Hrtype.
+    destruct (runtime_getObj h ly) as [obj|] eqn:Hobj; [trivial | discriminate].
+    assert (H_forall: Forall (fun value => match value with
+      | Null_a => True
+      | Iot loc => match runtime_getObj h loc with Some _ => True | None => False end
+      end) vals).
+    {
+      have H_typing := runtime_lookup_list_preserves_typing CT sΓ rΓ h args vals argtypes H H3 H2.
+      clear H4 H5.
+      induction H_typing.
+      - constructor.
+      - constructor.
+        + destruct x as [|loc]; [trivial|].
+          unfold wf_r_typable in H4.
+          destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [obj|] eqn:Hobj; [trivial | discriminate].
+        + admit.
+    }
+    exact H_forall.
+  }
+  {
+    simpl. lia.
+  }
+  {
+    constructor.
+      destruct H as [Hclass _].
+      apply method_sig_wf in H6; auto.
+      destruct H6 as [Hreceiver _].
+      exact Hreceiver.
+      destruct H as [Hclass _].
+      apply method_sig_wf in H6; auto.
+      destruct H6 as [_ Hparams].
+      exact Hparams.
+  }
+  {
+    simpl.
+    f_equal.
+    apply Forall2_length in H5.
+    apply static_getType_list_preserves_length in H3.
+    apply runtime_lookup_list_preserves_length in H2.
+    rewrite -> H3 in H5.
+    rewrite <- H2 in H5.
+    symmetry.
+    exact H5.
+  }
+  {
+    intros i Hi sqt Hnth.
+    destruct i as [|i'].
+    - (* Case: i = 0 (receiver) *)
+      simpl in Hnth.
+      injection Hnth as Heq. subst sqt.
+      simpl.
+      unfold wf_r_typable.
+      destruct H as [Hclasstable [Hheap [_ [Hsenv [_ Hcorr]]]]].
+      specialize (Hcorr y).
+      assert (Hy_dom : y < dom sΓ).
+      { apply static_getType_dom in H1. exact H1. }
+      specialize (Hcorr Hy_dom Ty H1).
+      rewrite H0 in Hcorr.
+
+      eapply wf_r_typable_subtype; eauto.
+      apply senv_var_domain with (sΓ := sΓ) (i := y); auto.
+      unfold static_getType in H1.
+      exact H1.
+
+      apply method_sig_wf in H6; auto.
+      destruct H6 as [Hreceiver _].
+      unfold wf_stypeuse in Hreceiver.
+      destruct (bound CT (sctype (mreceiver m_sig))) as [q_bound|] eqn:Hbound; [|contradiction].
+      destruct Hreceiver as [_ Hdom].
+      exact Hdom.
+
+      unfold wf_r_typable in Hcorr |- *.
+      destruct (r_type h ly) as [rqt|] eqn:Hrtype; [|contradiction].
+      destruct (get_this_var_mapping (vars {| vars := Iot ly :: vals |})) as [ι'|] eqn:Hthis.
+      simpl in Hthis.
+      injection Hthis as Hthis_eq.
+      subst ι'.
+      destruct (r_muttype h ly) as [q|] eqn:Hmut.
+      destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis_orig; [|contradiction].
+      destruct (r_muttype h ι') as [q_orig|] eqn:Hmut_orig; [|contradiction].
+      (* exact Hcorr. Continue later *)
+      + admit.
+      + admit.
+      + admit.
+      + admit.
+    - (* Case: i = S i' (parameters) *)
+      simpl in Hnth.
+      assert (Hi'_bound : i' < dom (mparams m_sig)).
+      { simpl in Hi. lia. }
+      assert (Hparam_nth : nth_error (mparams m_sig) i' = Some sqt).
+      { exact Hnth. }
+      simpl.
+      (* Get the corresponding argument type and value *)
+      assert (Hi'_args : i' < dom args).
+      {
+        apply Forall2_length in H5.
+        apply static_getType_list_preserves_length in H3.
+        apply runtime_lookup_list_preserves_length in H2.
+        rewrite -> H3 in H5.
+        rewrite <- H5 in Hi'_bound.
+        exact Hi'_bound.
+      }
+      (* Use the typing correspondence from the original environment *)
+      admit. (* Complex proof involving parameter correspondence *)
+  }
+Admitted.
+
+Lemma eval_stmt_preserves_heap_domain : forall CT sΓ sΓ' rΓ h stmt rΓ' h',
+  wf_r_config CT sΓ rΓ h ->
+  stmt_typing CT sΓ stmt sΓ' -> 
+  eval_stmt OK CT rΓ h stmt OK rΓ' h' ->
+  dom h <= dom h'.
+Proof.
+  intros CT sΓ sΓ' rΓ h stmt rΓ' h' Hwf Hstmttyping Heval.
+  generalize dependent sΓ.
+  generalize dependent sΓ'.
+  remember OK as ok; induction Heval; try reflexivity; try discriminate.
+  3:{
+    intros.
+    apply method_body_lookup_implies_def_lookup in H1.
+    destruct H1 as [mdef H1].
+    remember (msignature mdef) as msig.
+    destruct H1 as [Hmdef_lookup Hbody_eq].
+    have Hmdef_lookupcopy := Hmdef_lookup. 
+    apply method_body_well_typed in Hmdef_lookup; auto.
+    destruct Hmdef_lookup as [sΓmethodend Hmdef_lookup].
+    remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
+    apply IHHeval with (sΓ:=sΓmethodinit)(sΓ':=sΓmethodend); auto.
+    assert (Hwf_method_frame : wf_r_config CT sΓmethodinit 
+                                     rΓ' h).
+    {
+      unfold wf_r_config in *.
+      destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+      have Hclasstable := Hclass.
+      destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+      repeat split.
+      exact Hclass.
+      exact Hobj.
+      exact Hotherclasses.
+      apply Hcname_consistent.
+      apply Hcname_consistent.
+      exact Hheap.
+      rewrite H5.
+      simpl.
+      lia.
+      unfold wf_renv in Hrenv.
+      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+      exists ly.
+      split.
+      rewrite H5.
+      simpl.
+      reflexivity.
+      unfold runtime_getVal in H.
+      destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+      injection H as H1_eq.
+      subst v.
+      eapply Forall_nth_error in Hallvals; eauto.
+      simpl in Hallvals.
+      destruct (runtime_getObj h ly) as [obj|] eqn:Hobjly; [|contradiction].
+      apply runtime_getObj_dom in Hobjly.
+      exact Hobjly.
+
+      (* Inner runtime env is wellformed*)
+      rewrite H5.
+      simpl.
+      constructor.
+      simpl.
+      unfold runtime_getVal in H.
+      destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+      injection H as H1_eq.
+      subst v.
+      unfold runtime_getVal in Hnth_y.
+      unfold wf_renv in Hrenv.
+      destruct Hrenv as [_ [_ Hallvals]].
+      eapply Forall_nth_error in Hallvals; eauto.
+      simpl in Hallvals.
+      exact Hallvals.
+      eapply runtime_lookup_list_preserves_wf_values; eauto.
+
+      rewrite HeqsΓmethodinit.
+      simpl.
+      lia.
+      
+      (* Inner static env's elements are wellformed typeuse *)
+      rewrite HeqsΓmethodinit.
+      constructor.
+      (* Receiver type is well-formed *)
+      apply method_sig_wf_from_def with (m_sig := (msignature mdef)) in Hmdef_lookupcopy; auto.
+      destruct Hmdef_lookupcopy as [Hreceiver _].
+      exact Hreceiver.
+      (* Parameter types are well-formed *)
+      apply method_sig_wf_from_def with (m_sig := (msignature mdef)) in Hmdef_lookupcopy; auto.
+      destruct Hmdef_lookupcopy as [_ Hparams].
+      exact Hparams.
+
+      admit.
+      admit.
+    }
+    exact Hwf_method_frame.
+    rewrite -> Hbody_eq in Hmdef_lookup.
+    rewrite <- H2 in Hmdef_lookup.
+    exact Hmdef_lookup. 
+    unfold wf_r_config in Hwf.
+    destruct Hwf as [Hwf_classtable _].
+    exact Hwf_classtable.
+  }
+  - (* FldWrite: h' = update_field h lx f v2 *)
+  intros.
+  rewrite H3.
+  unfold update_field.
+  rewrite H0.
+  rewrite update_length.
+  reflexivity.
+  -
+  intros.
+  rewrite H5.
+  rewrite length_app.
+  simpl.
+  lia.
+  - (* Seq *)
+    intros.
+    inversion Hstmttyping; subst.
+        (* specialize (IHHeval1 eq_refl sΓ'0 sΓ Hwf H3) as IH1.
+    specialize (IHHeval2 eq_refl sΓ' sΓ'0 IH1 H5) as IH2. *)
+    apply Nat.le_trans with (dom h').
+    + (* Apply strong IH to first statement *)
+      apply IHHeval1 with (sΓ:=sΓ) (sΓ':=sΓ'0).
+      reflexivity.
+      exact Hwf.
+      exact H3.
+    + (* Apply strong IH to second statement *)
+      intros.
+      apply IHHeval2 with (sΓ:=sΓ'0) (sΓ':=sΓ').
+      reflexivity.
+      admit. (* somehow need the preservation...*)
+      exact H5.
+Admitted.
 
 (* ------------------------------------------------------------- *)
 (* Soundness properties for PICO *)
@@ -12,22 +500,179 @@ Theorem preservation_pico :
   forall CT sΓ rΓ h stmt rΓ' h' sΓ',
     wf_r_config CT sΓ rΓ h ->
     stmt_typing CT sΓ stmt sΓ' -> 
-    eval_stmt OK rΓ h stmt OK rΓ' h' -> 
+    eval_stmt OK CT rΓ h stmt OK rΓ' h' -> 
     wf_r_config CT sΓ' rΓ' h'.
 Proof.
-  intros.
-  generalize dependent h. generalize dependent rΓ.
-  generalize dependent h'. generalize dependent rΓ'.
-  induction H0.
+  intros CT sΓ rΓ h stmt rΓ' h' sΓ' Hwf Htyping Heval.
+  generalize dependent sΓ.
+  generalize dependent sΓ'.
+  remember OK as ok.
+  induction Heval; intros; try (discriminate; inversion Htyping; subst; exact Hwf).
+  6: 
+  {
+    inversion Htyping; subst.
+    apply method_body_lookup_implies_def_lookup in H1.
+    destruct H1 as [mdef H1].
+    remember (msignature mdef) as msig.
+    destruct H1 as [Hmdef_lookup Hbody_eq].
+    have Hmdef_lookupcopy := Hmdef_lookup. 
+    apply method_body_well_typed in Hmdef_lookup; auto.
+    destruct Hmdef_lookup as [sΓmethodend Hmdef_lookup].
+
+    remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
+    remember {| vars := Iot ly :: vals |} as rΓmethodinit.
+    remember (rΓ <| vars := update x retval (vars rΓ) |>) as rΓ'''.
+    assert (wf_r_config CT sΓmethodend rΓ'' h'). {
+      eapply IHHeval with (sΓ := sΓmethodinit) (sΓ' := sΓmethodend); eauto.
+      { (* Method inner config wellformed.*)
+        unfold wf_r_config in Hwf.
+        unfold wf_r_config.
+        destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+        have Hclasstable := Hclass.
+        destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+        repeat split.
+        exact Hclass.
+        exact Hobj.
+        exact Hotherclasses.
+        apply Hcname_consistent.
+        apply Hcname_consistent.
+        exact Hheap.
+        rewrite HeqrΓmethodinit.
+        simpl.
+        lia.
+        unfold wf_renv in Hrenv.
+        destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+        exists ly.
+        split.
+        rewrite HeqrΓmethodinit.
+        simpl.
+        reflexivity.
+        unfold runtime_getVal in H.
+        destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+        injection H as H1_eq.
+        subst v.
+        eapply Forall_nth_error in Hallvals; eauto.
+        simpl in Hallvals.
+        destruct (runtime_getObj h ly) as [obj|] eqn:Hobjly; [|contradiction].
+        apply runtime_getObj_dom in Hobjly.
+        exact Hobjly.
+
+        (* Inner runtime env is wellformed*)
+        rewrite HeqrΓmethodinit.
+        simpl.
+        constructor.
+        simpl.
+        unfold runtime_getVal in H.
+        destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+        injection H as H1_eq.
+        subst v.
+        unfold runtime_getVal in Hnth_y.
+        unfold wf_renv in Hrenv.
+        destruct Hrenv as [_ [_ Hallvals]].
+        eapply Forall_nth_error in Hallvals; eauto.
+        simpl in Hallvals.
+        exact Hallvals.
+        eapply runtime_lookup_list_preserves_wf_values; eauto.
+
+        rewrite HeqsΓmethodinit.
+        simpl.
+        lia.
+
+        (* Inner static env's elements are wellformed typeuse *)
+        rewrite HeqsΓmethodinit.
+        constructor.
+        (* Receiver type is well-formed *)
+        apply method_sig_wf_from_def with (m_sig := (msignature mdef)) in Hmdef_lookupcopy; auto.
+        destruct Hmdef_lookupcopy as [Hreceiver _].
+        exact Hreceiver.
+        (* Parameter types are well-formed *)
+        apply method_sig_wf_from_def with (m_sig := (msignature mdef)) in Hmdef_lookupcopy; auto.
+        destruct Hmdef_lookupcopy as [_ Hparams].
+        exact Hparams.
+
+        apply static_getType_list_preserves_length in H15.
+        apply runtime_lookup_list_preserves_length in H4.
+        rewrite HeqsΓmethodinit.
+        rewrite HeqrΓmethodinit.
+        simpl.
+        f_equal.
+        apply Forall2_length in H23.
+        rewrite <- Heqmsig.
+        (* rewrite <- H23. prove method lookup number of parameters consistent*)
+        admit.
+
+        admit.
+      }
+      rewrite Hbody_eq in Hmdef_lookup.
+      exact Hmdef_lookup.
+    }
+    { (* Method call resulting config is wellformed *)
+      unfold wf_r_config in H1.
+      unfold wf_r_config.
+      unfold wf_r_config in Hwf.
+      destruct Hwf as [_ [Hheapinit [Hrenvinit [Hsenvinit [Hleninit Hcorrinit]]]]].
+      unfold wf_renv in Hrenvinit.
+      destruct Hrenvinit as [HrEnvLen [Hreceiver Hrenvval]].
+      (* destruct Hreceiver as [Hreceiverval Hreceivervaldom]. *)
+      destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+      destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+      repeat split.
+      exact Hclass.
+      exact Hobj.
+      exact Hotherclasses.
+      apply Hcname_consistent.
+      apply Hcname_consistent.
+      exact Hheap.
+      rewrite HeqrΓ'''.
+      simpl.
+      rewrite update_length.
+      simpl.
+      lia.
+      destruct Hreceiver as [iot [Hget_iot Hiot_dom]].
+      exists iot.
+      split.
+      rewrite HeqrΓ'''.
+      simpl.
+      unfold gget in *.
+      destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+      discriminate Hget_iot.
+      injection Hget_iot as Hv0_eq.
+      subst v0.
+      unfold update.
+      destruct x as [|x'].
+      easy.
+      simpl.
+      reflexivity.
+      admit. (* need that new heap domain lemma *)
+      (* unfold runtime_getVal in H.
+      destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+      injection H as H1_eq.
+      subst v. *)
+      (* Outter runtime env is wellformed*)
+      admit.
+      rewrite Hleninit.
+      exact HrEnvLen.
+      admit. (* Method typing inversion *)
+      rewrite Hleninit.
+      rewrite HeqrΓ'''.
+      simpl.
+      rewrite update_length.
+      easy.
+      admit. (* Welltyped *)
+    }
+    unfold wf_r_config in Hwf.
+    destruct Hwf as [Hwf_classtable _].
+    exact Hwf_classtable.
+  }
   - (* Case: stmt = Skip *)
     intros.
-    inversion H1; subst.
-    exact H0.
+    inversion Htyping; subst.
+    exact Hwf.
   - (* Case: stmt = Local *)
     intros.
-    inversion H4; subst.
+    inversion Htyping; subst.
     unfold wf_r_config in *.
-    destruct H3 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) 
     unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
@@ -36,7 +681,9 @@ Proof.
     + (* All other classes have super class*)
     unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) exact Hheap.
     + (* Length of runtime environment greater than 0 *)
     simpl. rewrite length_app. simpl. lia.
@@ -70,9 +717,9 @@ Proof.
     + (* wellformed static environment *)
       unfold wf_senv in *. apply Forall_app. split.
       * destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
-      * destruct H as [_ HTWellTyped]. 
+      *
         constructor.
-        -- exact H0. (* assuming H is the wellformedness of T *)
+        -- exact H3. (* assuming H is the wellformedness of T *)
         -- constructor. (* empty tail is well-typed *)
     + (* length equality *)
       simpl. rewrite length_app. simpl. rewrite Hlen. rewrite length_app. simpl. lia.
@@ -88,7 +735,7 @@ Proof.
            trivial.
         -- rewrite Hlen.
            assert (dom (vars rΓ) - dom (vars rΓ) = 0) by lia.
-            rewrite H2.
+            rewrite H0.
             simpl.
             trivial.
       * (* Case: i < dom sΓ (existing variable) *)
@@ -119,7 +766,7 @@ Proof.
                 unfold get_this_var_mapping.
                 destruct (vars rΓ) as [|v0 vs]; reflexivity.
               }
-              rewrite H2.
+              rewrite H0.
               exact Hcorr.
            ++ (* Case: nth_error (vars rΓ) i = None *)
               exfalso.
@@ -128,9 +775,9 @@ Proof.
               lia.
   - (* Case: stmt = VarAss *)
     intros.
-    inversion H5; subst.
+    inversion Htyping; subst.
     unfold wf_r_config in *.
-    destruct H4 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) 
     unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
@@ -139,7 +786,9 @@ Proof.
     + (* All other classes have super class*)
     unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) exact Hheap.
     + (* Length of runtime environment greater than 0 *)
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
@@ -172,53 +821,59 @@ Proof.
     * exact Hallvals.
     * destruct v2 as [|loc].
       -- trivial.
-      -- inversion H11; subst.
-        assert (Hloc_in_vars : exists i, nth_error (vars rΓ) i = Some (Iot loc)).
-        ++ apply runtime_getVal_dom in H4.
-          exists x0. 
-          unfold runtime_getVal in H4.
-          inversion H11; subst.
-          unfold runtime_getVal in H7.
-          exact H7.
-        ++ destruct Hloc_in_vars as [i Hi].
-          assert (Hloc_wf := Forall_nth_error _ _ _ _ Hallvals Hi).
-          simpl in Hloc_wf.
-          exact Hloc_wf.
-      ++
-      specialize (Hheap v).
-      assert (Hv_dom : v < dom h').
-      {
-        apply runtime_getObj_dom in H6.
-        exact H6.
-      }
-      specialize (Hheap Hv_dom).
-      unfold wf_obj in Hheap.
-      rewrite H6 in Hheap.
-      (* destruct Hheap as [_ [_ Hwf_fields]]. *)
-      assert (Hloc_in_fields : nth_error (fields_map o) f = Some (Iot loc)).
-      {
-        exact H7.
-      }
-      destruct Hheap as [_ [field_defs [Hcollect [Hlen_eq Hforall2]]]].
-      assert (Hfield_exists : exists fdef, nth_error field_defs f = Some fdef).
-      {
-        assert (Hf_dom : f < List.length (fields_map o)) by (apply nth_error_Some; rewrite Hloc_in_fields; discriminate).
-        rewrite Hlen_eq in Hf_dom.
-        destruct (nth_error field_defs f) as [fdef|] eqn:Hfdef.
-        - exists fdef. reflexivity.
-        - exfalso. apply nth_error_None in Hfdef. lia.
-      }
-      destruct Hfield_exists as [fdef Hfdef].
-      (* assert (Hfield_prop := Forall2_nth_error_prop _ _ _ _ _ _ Hwf_fields Hloc_in_fields Hfdef).
-      simpl in Hfield_prop. *)
-      destruct (runtime_getObj h' loc) as [o'|] eqn:Hloc_obj.
-      trivial.
-      assert (Hfield_prop := Forall2_nth_error_prop _ _ _ _ _ _ Hforall2 Hloc_in_fields Hfdef).
-      simpl in Hfield_prop.
-      rewrite Hloc_obj in Hfield_prop.
-      exact Hfield_prop.
-    * apply runtime_getVal_dom in H8.
-      exact H8.
+      -- inversion H0; subst.
+        (* assert (Hloc_in_vars : exists i, nth_error (vars rΓ) i = Some (Iot loc)). *)
+        ++ 
+        assert (Hx0_bound : x0 < dom (vars rΓ)).
+        {
+          apply runtime_getVal_dom in H1.
+          exact H1.
+        }
+        assert (Hloc_wf : match runtime_getObj h loc with Some _ => True | None => False end).
+        {
+          unfold runtime_getVal in H1.
+          assert (Hnth_loc : nth_error (vars rΓ) x0 = Some (Iot loc)) by exact H1.
+          eapply Forall_nth_error in Hallvals; eauto.
+          simpl in Hallvals.
+          exact Hallvals.
+        }
+        exact Hloc_wf.
+        ++ 
+        assert (Hv_bound : v < dom h).
+        {
+          apply runtime_getVal_dom in H1.
+          unfold runtime_getVal in H1.
+          apply runtime_getObj_dom in H2.
+          exact H2.
+        }
+        specialize (Hheap v Hv_bound).
+        unfold wf_obj in Hheap.
+        rewrite H2 in Hheap.
+        destruct Hheap as [_ [field_defs [Hcollect [Hlen_eq Hforall2]]]].
+        assert (Hf_bound : f < List.length (fields_map o)).
+        {
+          apply nth_error_Some.
+          unfold getVal in H6.
+          rewrite H6.
+          discriminate.
+        }
+        rewrite Hlen_eq in Hf_bound.
+        assert (Hfield_def : exists fdef, nth_error field_defs f = Some fdef).
+        {
+          apply nth_error_Some_exists.
+          exact Hf_bound.
+        }
+        destruct Hfield_def as [fdef Hfdef].
+        unfold getVal in H6.
+        eapply Forall2_nth_error in Hforall2; eauto.
+        simpl in Hforall2.
+        destruct (runtime_getObj h loc) as [obj|] eqn:Hloc_obj.
+        --- (* Case: runtime_getObj h loc = Some obj *)
+          trivial.
+        --- (* Case: runtime_getObj h loc = None *)
+          contradiction Hforall2.
+    * apply runtime_getVal_dom in H.
+      exact H.
     + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength. 
     + (* wellformed static environment *)
       destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
@@ -235,28 +890,28 @@ Proof.
         simpl.
         rewrite update_same.
         (* Need to show v2 is well-typed with respect to T' *)
-        assert (Hsubtype: qualified_type_subtype CT Te Tx) by exact H3.
-        assert (Hexpr_type: expr_has_type CT sΓ e Te) by exact H0.
+        (* assert (Hsubtype: qualified_type_subtype CT Te Tx) by exact H3.
+        assert (Hexpr_type: expr_has_type CT sΓ e Te) by exact H0. *)
         rewrite <- Hlen; exact Hi.
         destruct v2 as [|loc].
         -- (* Case: v2 = Null_a *)
           trivial.
         -- (* Case: v2 = Iot loc *)
           (* Use subtyping to convert from T to sqt *)
-          assert (Hsubtype_preserved : wf_r_typable CT (rΓ <| vars := update x (Iot loc) (vars rΓ) |>) h' loc sqt).
+          assert (Hsubtype_preserved : wf_r_typable CT (rΓ <| vars := update x (Iot loc) (vars rΓ) |>) h loc sqt).
           {
             assert (Hsqt_eq : sqt = Tx).
           {
-            unfold static_getType in H2.
-            rewrite H2 in Hnth.
+            unfold static_getType in H8.
+            rewrite H8 in Hnth.
             injection Hnth as Hsqt_eq.
             symmetry. exact Hsqt_eq.
           }
           subst sqt.
-          assert (H_loc_Te : wf_r_typable CT rΓ h' loc Te).
+          assert (H_loc_Te : wf_r_typable CT rΓ h loc Te).
           {
             (* Apply expression evaluation preservation lemma *)
-            apply (expr_eval_preservation CT sΓ rΓ h' e (Iot loc) rΓ h' Te).
+            apply (expr_eval_preservation CT sΓ' rΓ h e (Iot loc) rΓ h Te).
             - unfold wf_r_config. repeat split; eauto. 
             + (* wellformed class *) 
             unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
@@ -265,14 +920,16 @@ Proof.
             + (* All other classes have super class*)
             unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
             + (* Class identifier match*)
-            unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
+            unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
+            + (* Class identifier match*)
+            unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
             + unfold wf_renv in Hrenv. destruct Hrenv as [Hrenvdom _]. exact Hrenvdom.
             + unfold wf_renv in Hrenv. destruct Hrenv as [_ [Hreceiver Hrvals]]. exact Hreceiver.
             + unfold wf_renv in Hrenv. destruct Hrenv as [_ [Hreceiver Hrvals]]. exact Hrvals.
             + unfold wf_senv in Hsenv. destruct Hsenv as [Hsenvdom _]. exact Hsenvdom.
             + unfold wf_senv in Hsenv. destruct Hsenv as [Hsenvdom Htypable]. exact Htypable.
+            - exact H4.
             - exact H0.
-            - exact H11.
           }
           (* Use subtyping to convert Te to Tx *)
           eapply wf_r_typable_subtype; eauto.
@@ -290,7 +947,7 @@ Proof.
               destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
               - discriminate Hthis_orig.
               - destruct x as [|x'].
-                + contradiction H1. reflexivity.
+                + easy.
                 + simpl in Hthis.
                   destruct v0 as [|loc_v0] eqn:Hv0.
             * (* v0 = Null_a *)
@@ -317,7 +974,7 @@ Proof.
             * (* Non-empty case *)
               destruct x as [|x'].
               + (* x = 0 contradicts H1 *)
-                contradiction H1. reflexivity.
+                easy.
               + (* x = S x', so update preserves position 0 *)
                 simpl in Hthis.
                 unfold wf_renv in Hrenv.
@@ -330,12 +987,12 @@ Proof.
                 subst v0.
                 simpl in Hthis.
                 discriminate Hthis.
-          - apply senv_var_domain with (sΓ:=sΓ) (i:=x). exact H. exact Hnth.
+          - apply senv_var_domain with (sΓ:=sΓ') (i:=x). exact H3. exact Hnth.
           - 
           unfold wf_r_typable in H_loc_Te |- *.
-          destruct (r_type h' loc) as [rqt|] eqn:Hrtype; [|contradiction].
+          destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
           destruct (get_this_var_mapping (vars rΓ)) as [ι0|] eqn:Hthis_orig; [|contradiction].
-          destruct (r_muttype h' ι0) as [q|] eqn:Hmut; [|contradiction].
+          destruct (r_muttype h ι0) as [q|] eqn:Hmut; [|contradiction].
           assert (Hthis_preserved : get_this_var_mapping (vars (rΓ <| vars := update x (Iot loc) (vars rΓ) |>)) = Some ι0).
           {
             simpl.
@@ -343,7 +1000,7 @@ Proof.
             destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
             - discriminate Hthis_orig.
             - destruct x as [|x'].
-              + contradiction H1. reflexivity.
+              + easy.
               + simpl. exact Hthis_orig.
           }
           rewrite Hthis_preserved.
@@ -363,16 +1020,29 @@ Proof.
             + destruct v as [|loc].
               * trivial.
               * unfold wf_r_typable in Hcorr_orig |- *.
-                destruct (r_type h' loc) as [rqt|] eqn:Hrtype; [|contradiction].
+                destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
                 destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
-                destruct (r_muttype h' ι') as [q|] eqn:Hmut; [|contradiction].
+                destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
                 assert (Hthis_preserved : get_this_var_mapping (update x v2 (vars rΓ)) = Some ι').
                 {
                   unfold get_this_var_mapping in *.
                   destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
                   - discriminate Hthis.
                   - destruct x as [|x'].
-                    + contradiction H1. reflexivity.
+                    + 
+                    simpl.
+                    destruct v2 as [|loc2].
+                    -- (* Case: v2 = Null_a *)
+                      exfalso.
+                      contradiction H5.
+                      reflexivity.
+                    -- (* Case: v2 = Iot loc2 *)
+                      simpl.
+                      destruct v0 as [|loc0].
+                      ++ (* Case: v0 = Null_a *)
+                        discriminate Hthis.
+                      ++ (* Case: v0 = Iot loc0 *)
+                        easy.
                     + simpl. exact Hthis.
                 }
                 rewrite Hthis_preserved.
@@ -382,9 +1052,9 @@ Proof.
         }
   - (* Case: stmt = FldWrite *)
     intros.
-    inversion H7; subst.
+    inversion Htyping; subst.
     unfold wf_r_config in *.
-    destruct H6 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) 
     unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
@@ -393,7 +1063,9 @@ Proof.
     + (* All other classes have super class*)
     unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) 
     unfold wf_heap in *.
     intros ι Hdom.
@@ -403,8 +1075,8 @@ Proof.
       destruct (Nat.eq_dec ι lx) as [Heq | Hneq].
       -- (* Case: ι = lx (the updated object) *)
         subst ι.
-        injection H12 as Ho_eq.
-        subst o_new.
+        (* injection H12 as Ho_eq. *)
+        (* subst o_new. *)
         unfold wf_obj.
         simpl.
         specialize (Hheap lx).
@@ -441,7 +1113,7 @@ Proof.
         }
         admit.
         * exfalso.
-        discriminate H12.
+        discriminate H0.
     + destruct Hrenv as [HrEnvLen [Hreceiver Hallvals]]. exact HrEnvLen.
     + destruct Hrenv as [HrEnvLen [Hreceiver Hallvals]]. destruct Hreceiver as [Hreceiverval Hreceivervaldom].
       exists Hreceiverval.
@@ -470,19 +1142,19 @@ Proof.
     + 
     intros i Hi sqt Hnth.
       assert (Hcorr_orig := Hcorr i Hi sqt Hnth).
-      destruct (runtime_getVal rΓ' i) as [v|] eqn:Hval; [|exact Hcorr_orig].
+      destruct (runtime_getVal rΓ i) as [v|] eqn:Hval; [|exact Hcorr_orig].
       destruct v as [|loc]; [trivial|].
       (* Need to show: wf_r_typable CT rΓ' (update_field h lx f v2) loc sqt *)
       unfold wf_r_typable in Hcorr_orig |- *.
       destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
-      destruct (get_this_var_mapping (vars rΓ')) as [ι'|] eqn:Hthis; [|contradiction].
+      destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
       destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
       (* Show that r_type and r_muttype are preserved by update_field *)
       assert (Hrtype_preserved : r_type (update_field h lx f v2) loc = Some rqt).
       {
         unfold r_type.
         unfold update_field.
-        have H12_copy := H12.
+        (* have H12_copy := H12. *)
         remember (runtime_getObj h lx) as obj_result eqn:Hobj_eq.
         destruct obj_result as [o'|].
         - destruct (Nat.eq_dec loc lx) as [Heq | Hneq].
@@ -501,8 +1173,8 @@ Proof.
             destruct (runtime_getObj h lx) as [o_lx|] eqn:Hobj_lx; [|discriminate Hrtype].
             injection Hrtype as Hrtype_eq.
             rewrite <- Hrtype_eq.
-            injection H12 as Ho'_eq.
-            subst o'.
+            (* injection H12 as Ho'_eq. *)
+            (* subst o'. *)
             f_equal.
             injection Hobj_eq_copy as Ho_eq.
             rewrite Ho_eq.
@@ -538,10 +1210,10 @@ Proof.
       exact Hcorr_orig.
   - (* Case: stmt = New *)
     intros.
-    inversion H12.
+    inversion Htyping.
     (* subst. *)
     unfold wf_r_config in *.
-    destruct H11 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) 
     unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
@@ -550,7 +1222,9 @@ Proof.
     + (* All other classes have super class*)
     unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
+    + (* Class identifier match*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) 
     unfold wf_heap.
     intros ι Hι.
@@ -566,9 +1240,9 @@ Proof.
       -- (* wf_rtypeuse for new object *)
         simpl.
         unfold wf_rtypeuse.
-        destruct (bound CT C) as [q_c_val|] eqn:Hbound.
-        ++ unfold constructor_sig_lookup in H2.
-        destruct (find_class CT C) as [def|] eqn:Hfind.
+        destruct (bound CT c) as [q_c_val|] eqn:Hbound.
+        ++ unfold constructor_sig_lookup in H14.
+        destruct (find_class CT c) as [def|] eqn:Hfind.
         ** apply find_class_dom in Hfind.
           exact Hfind.
         ** exfalso.
@@ -576,15 +1250,15 @@ Proof.
         rewrite Hfind in Hbound.
         discriminate Hbound.
         ++ 
-          unfold constructor_sig_lookup in H2.
-          destruct (constructor_def_lookup CT C) as [ctor|] eqn:Hctor.
+          unfold constructor_sig_lookup in H14.
+          destruct (constructor_def_lookup CT c) as [ctor|] eqn:Hctor.
           ** unfold constructor_def_lookup in Hctor.
-            destruct (find_class CT C) as [def|] eqn:Hfind.
+            destruct (find_class CT c) as [def|] eqn:Hfind.
             --- unfold bound in Hbound.
               rewrite Hfind in Hbound.
               discriminate Hbound.
             --- discriminate Hctor.
-          ** discriminate H2.
+          ** discriminate H14.
       --
       repeat split.
        admit.
@@ -593,7 +1267,7 @@ Proof.
       unfold wf_obj.
       rewrite runtime_getObj_last2; auto.
       {
-        specialize (Hheap ι H4).
+        specialize (Hheap ι H2).
         unfold wf_obj in Hheap |- *.
         destruct (runtime_getObj h ι) as [o|] eqn:Hobj; [|contradiction].
           destruct Hheap as [Hrtypeuse [Hfields_len Hforall2]].
@@ -653,17 +1327,17 @@ Proof.
                 split.
                 - (* Show update preserves position 0 *)
                   simpl. 
-                  exfalso. apply H3. reflexivity.
+                  exfalso. easy.
                 - (* Show iot is still in extended heap domain *)
                   subst.
                   rewrite length_app. simpl.
                   lia.
               }
-           --    (* update (S x') v2 (v0 :: vs) = v0 :: update x' v2 vs *)
+           --
             split.   
             subst.
             exact Hiot.
-            rewrite H25.
+            rewrite H5.
             rewrite length_app.
             simpl.
             lia.
@@ -684,16 +1358,16 @@ Proof.
       assert (dom h + 1 = S (dom h)) by lia.
       unfold runtime_getObj.
       simpl.
-      assert (Hlen_extended: dom (h ++ [{| rt_type := {| rqtype := qadapted; rctype := C |}; fields_map := vals |}]) = dom h + 1).
+      assert (Hlen_extended: dom (h ++ [{| rt_type := {| rqtype := qadapted; rctype := c |}; fields_map := vals |}]) = dom h + 1).
       -- rewrite length_app. simpl. lia.
       -- rewrite nth_error_app2.
       ** lia.
       ** replace (dom h - dom h) with 0 by lia.
         simpl. reflexivity.
-      * assert (Hx_dom : x < dom sΓ) by (apply static_getType_dom in H0; exact H0).
+      * assert (Hx_dom : x < dom sΓ') by (apply static_getType_dom in H12; exact H12).
       rewrite <- Hlen; exact Hx_dom.
-    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
-    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. rewrite <- H22. exact HsenvLength.
+    + destruct Hsenv as [HsenvLength HsenvWellTyped]. rewrite <- H22. exact HsenvWellTyped.
     + subst. rewrite update_length. rewrite <- Hlen. lia.
     + 
     {
@@ -705,8 +1379,8 @@ Proof.
         unfold runtime_getVal.
         subst.
         rewrite update_same.
-          + assert (x < dom sΓ) by (apply static_getType_dom in H0; exact H0).
-          rewrite <- Hlen. exact H4.
+        + assert (x < dom sΓ') by (apply static_getType_dom in H12; exact H12).
+        rewrite <- Hlen. exact H2.
         + (* Show wf_r_typable for the new object *)
           {
             unfold wf_r_typable.
@@ -725,198 +1399,141 @@ Proof.
             - unfold r_muttype.
             destruct x as [|x'].
             + (* Case: x = 0 *)
-              contradiction H3. reflexivity.
+              easy.
             + (* Case: x = S x' *)
-              unfold runtime_getVal in H17.
-              rewrite Hvars in H17.
-              simpl in H17.
-              injection H17 as H17_eq.
+              unfold runtime_getVal in H.
+              rewrite Hvars in H.
+              simpl in H.
+              injection H as H17_eq.
               subst v0.
               simpl.
               unfold r_muttype.
               rewrite heap_extension_preserves_objects.
-              * unfold r_muttype in H19.
-                destruct (runtime_getObj h l1) as [obj|] eqn:Hobj; [|discriminate].
+              unfold r_muttype in H1.
+              destruct (runtime_getObj h l1) as [obj|] eqn:Hobj; [|discriminate].
+              *
                 apply runtime_getObj_dom in Hobj.
                 exact Hobj.
-              * unfold r_muttype in H19.
-                destruct (runtime_getObj h l1) as [obj|] eqn:Hobj; [|discriminate].
-                injection H19 as H19_eq.
+              * 
+                (* injection H as H19_eq.
                 rewrite H19_eq.
-                split.
+                split. *)
                 assert (Hsqt_eq : sqt = Tx).
                 {
-                  unfold static_getType in H0.
-                  rewrite Hnth in H0.
-                  injection H0 as H0_eq.
+                  unfold static_getType in H12.
+                  rewrite Hnth in H12.
+                  injection H12 as H0_eq.
                   exact H0_eq.
                 }
                 subst sqt.
                 unfold runtime_type_to_qualified_type.
                 simpl.
                 {
-                  apply qualified_type_subtype_base_subtype in H10.
-                  - exact H10.
-                  - (* C < dom CT *)
-                    (* This should follow from constructor well-formedness *)
-                    apply constructor_sig_lookup_dom in H2.
-                    exact H2.
-                  - (* sctype Tx < dom CT *)
-                    (* This should follow from sΓ well-formedness *)
-                    assert (Hwf_Tx : wf_stypeuse CT (sqtype Tx) (sctype Tx)).
-                    {
-                      unfold wf_senv in Hsenv.
-                      destruct Hsenv as [_ Hforall].
-                      apply (Forall_nth_error _ _ _ _ Hforall Hnth).
-                    }
-                    unfold wf_stypeuse in Hwf_Tx.
-                    destruct (bound CT (sctype Tx)) as [q_bound|] eqn:Hbound; [|contradiction].
-                    destruct Hwf_Tx as [_ Hdom].
-                    exact Hdom.  
-                }
-                {
-                  assert (Hsqt_eq : sqt = Tx).
-                  {
-                    unfold static_getType in H0.
-                    rewrite Hnth in H0.
-                    injection H0 as H0_eq.
-                    exact H0_eq.
-                  }
-                  subst sqt.
-
-                  (* Extract qualifier subtyping from H10 *)
-                  apply qualified_type_subtype_q_subtype in H10.
-                  - (* Use the fact that qadapted was constructed to be compatible *)
-                    unfold qualifier_typable.
-                    (* qadapted comes from q_project_q_r, so it must be Mut_r or Imm_r *)
-                    destruct qadapted as [|]; 
-                    (* Use H7: vpa_mutabilty qc (cqualifier consig) = qc and other hypotheses *)
-                    (* to show the compatibility *)
-                    simpl.
-                    simpl in H10.
-                    unfold q_project_q_r in H21.
-                    assert (Hvpa_mut : vpa_mutabilty (q_r_proj qthisr) qc = Mut).
-                    {
-                      unfold q_project_q_r in H21.
-                      destruct (vpa_mutabilty (q_r_proj qthisr) qc) eqn:Hvpa.
-                      - (* Case: vpa_mutabilty ... = Mut *)
-                        reflexivity.
-                      - discriminate H21.
-                      - discriminate H21.
-                      - discriminate H21.
-                      - discriminate H21.
-                      - discriminate H21.
-                    }
-                    rewrite Hvpa_mut in H21.
-                    apply vpa_type_to_type_mut_cases in Hvpa_mut.
-                    destruct (sqtype Tx) eqn: qx.
-                    destruct Hvpa_mut as [H_qc_mut | [H_qthis_mut H_qc_rdm]].
-                    assert (vpa_mutabilty (q_r_proj qthisr) Mut = Mut).
-                    {
-                      unfold vpa_mutabilty.
-                      destruct (q_r_proj qthisr). all: try reflexivity.
-                    }
-                    rewrite H4. easy.
-                    assert (vpa_mutabilty (q_r_proj qthisr) Mut = Mut).
-                    {
-                      unfold vpa_mutabilty.
-                      destruct (q_r_proj qthisr). all: try reflexivity.
-                    }
-                    rewrite H4. easy.
-                    exfalso.
-                    destruct Hvpa_mut as [H_qc_mut | [H_qthis_mut H_qc_rdm]].
-                    {
-                      - (* Case: qc = Mut *)
-                      subst qc.
-                      (* Now we have Mut ⊑ Imm, which is impossible *)
-                      inversion H10; discriminate.
-                    }
-                    subst qc. inversion H10; discriminate. 
-                    destruct Hvpa_mut as [H_qc_mut | [H_qthis_mut H_qc_rdm]].
-                    subst qc.
-                    exfalso.
-                    inversion H10; discriminate.
-                    rewrite H_qthis_mut.
-                    unfold vpa_mutabilty.
-                    simpl.
-                    reflexivity.
-                    assert (vpa_mutabilty (q_r_proj qthisr) Rd = Rd).
-                    {
-                      unfold vpa_mutabilty.
-                      destruct (q_r_proj qthisr); simpl; reflexivity.
-                    }
-                    rewrite H4. reflexivity.
-                    assert (vpa_mutabilty (q_r_proj qthisr) Lost = Lost).
-                    {
-                      unfold vpa_mutabilty.
-                      destruct (q_r_proj qthisr); simpl; reflexivity.
-                    }
-                    rewrite H4. reflexivity.
-                    exfalso.
-                    destruct Hvpa_mut as [H_qc_mut | [H_qthis_mut H_qc_rdm]].
-                    subst qc.
-                    inversion H10; discriminate.
-                    subst qc.
-                    inversion H10; discriminate.
-                    simpl in H10.
-                    unfold q_project_q_r in H21.
-                    assert (Hvpa_imm : vpa_mutabilty (q_r_proj qthisr) qc = Imm).
-                    {
-                      unfold q_project_q_r in H21.
-                      destruct (vpa_mutabilty (q_r_proj qthisr) qc) eqn:Hvpa.
-                      - discriminate H21.
-                      - reflexivity.
-                      - discriminate H21.
-                      - discriminate H21.
-                      - discriminate H21.
-                      - discriminate H21.
-                    }
-                    apply vpa_type_to_type_imm_cases in Hvpa_imm.
-                    {
-                      destruct Hvpa_imm as [H_qc_imm | [H_qthis_imm H_qc_rdm]].
-                      - (* Case: qc = Imm *)
-                        subst qc.
-                        assert (Hsqtype_imm : sqtype Tx =  Imm \/ sqtype Tx = Rd).
+                  unfold r_muttype in H1.
+                  destruct (runtime_getObj h l1) as [obj|] eqn:Hobj; [|discriminate].
+                  injection H1 as H1_eq.
+                  subst qthisr.
+                  split.
+                    + apply qualified_type_subtype_base_subtype in H25.
+                      * exact H25.
+                      * apply constructor_sig_lookup_dom in H14; exact H14.
+                      * assert (Hwf_Tx : wf_stypeuse CT (sqtype Tx) (sctype Tx)).
                         {
-                          inversion H10; subst.
-                          left. reflexivity.
-                          right. reflexivity.
+                          unfold wf_senv in Hsenv.
+                          destruct Hsenv as [_ Hforall].
+                          apply (Forall_nth_error _ _ _ _ Hforall Hnth).
                         }
-                        destruct Hsqtype_imm as [qximm|qxrd].
-                        rewrite qximm.
+                        unfold wf_stypeuse in Hwf_Tx.
+                        destruct (bound CT (sctype Tx)) as [q_bound|] eqn:Hbound; [|contradiction].
+                        destruct Hwf_Tx as [_ Hdom].
+                        exact Hdom.
+                    + unfold qualifier_typable.
+                      unfold q_project_q_r in H3.
+                      destruct (vpa_mutabilty (q_r_proj (rqtype (rt_type obj))) q_c) eqn:Hvpa; try discriminate.
+                      injection H3 as H3_eq.
+                      subst qadapted.
+                      simpl.
+                      apply qualified_type_subtype_q_subtype in H25.
+                      destruct (sqtype Tx) eqn:Hsqtype_Tx.
+                      - (* sqtype Tx = Mut *)
                         unfold vpa_mutabilty.
-                        destruct (q_r_proj qthisr); simpl; reflexivity.
-                        rewrite qxrd.
+                        destruct (q_r_proj (rqtype (rt_type obj))); reflexivity.
+                      - (* sqtype Tx = Imm *)
+                        exfalso.
+                        simpl in H25.
+                        apply vpa_type_to_type_mut_cases in Hvpa.
+                        destruct Hvpa as [Hqc_mut | [Hqthis_mut Hqc_rdm]].
+                        * (* Case: q_c = Mut *)
+                          subst q_c.
+                          easy.
+                        * (* Case: q_c = RDM *)
+                          subst q_c.
+                          easy.
+                      - (* sqtype Tx = Rd *)
                         unfold vpa_mutabilty.
-                        destruct (q_r_proj qthisr); simpl; reflexivity.
-                      - (* Case: q_r_proj qthisr = Imm /\ qc = RDM *)
-                        assert (Hsqtype_rdm : sqtype Tx =  RDM \/ sqtype Tx = Rd).
-                        {
-                          inversion H10; subst.
-                          left. symmetry. exact H11.
-                          right. reflexivity.
-                          discriminate H4.
-                        }
-                        destruct Hsqtype_rdm as [qxrdm | qxrd].
-                        rewrite qxrdm. rewrite H_qthis_imm.
+                        destruct (q_r_proj (rqtype (rt_type obj))). all: try reflexivity.
+                        apply vpa_type_to_type_mut_cases in Hvpa.
+                        destruct Hvpa as [Hqc_mut | [Hqthis_mut Hqc_rdm]]; [|trivial].
+                        all: try simpl in H25.
+                        subst q_c.
+                        easy.
+                        easy.
+                        apply vpa_type_to_type_mut_cases in Hvpa.
+                        destruct Hvpa as [Hqc_mut | [Hqthis_mut Hqc_rdm]]; [|trivial].
+                        subst q_c.
+                        easy.
+                        easy.
+                        apply vpa_type_to_type_mut_cases in Hvpa.
+                        destruct Hvpa as [Hqc_mut | [Hqthis_mut Hqc_rdm]]; [|trivial].
+                        subst q_c.
+                        easy.
+                        easy.
+                      - (* sqtype Tx = Lost *)
                         unfold vpa_mutabilty.
-                        reflexivity.
-                        rewrite qxrd.
-                        destruct (q_r_proj qthisr); simpl; reflexivity.
-                    }
-                  - (* Domain constraints *)
-                    apply constructor_sig_lookup_dom in H2. exact H2.
-                  - (* Domain constraints *)
-                    assert (Hwf_Tx : wf_stypeuse CT (sqtype Tx) (sctype Tx)).
-                    {
-                      unfold wf_senv in Hsenv.
-                      destruct Hsenv as [_ Hforall].
-                      apply (Forall_nth_error _ _ _ _ Hforall Hnth).
-                    }
-                    unfold wf_stypeuse in Hwf_Tx.
-                    destruct (bound CT (sctype Tx)) as [q_bound|] eqn:Hbound; [|contradiction].
-                    destruct Hwf_Tx as [_ Hdom].
-                    exact Hdom.  
+                        destruct (q_r_proj (rqtype (rt_type obj))); reflexivity.
+                      - destruct (q_r_proj (rqtype (rt_type obj))). all: try reflexivity.
+                      - destruct (q_r_proj (rqtype (rt_type obj))).
+                        all: unfold vpa_mutabilty.
+                        all: try apply vpa_type_to_type_mut_cases in Hvpa.
+                        all: try destruct Hvpa as [Hqc_mut | [Hqthis_mut Hqc_rdm]]; [|trivial].
+                        all: try subst q_c.
+                        all: try easy.
+                      - inversion H25; subst. all: try exact H. simpl.
+                        apply constructor_sig_lookup_dom in H14.
+                        exact H14.
+                      - unfold wf_senv in H11.
+                        destruct H11 as [Hsenvdom Halltyable].
+                        have Hwf_Tx := Forall_nth_error _ _ _ _ Halltyable Hnth.
+                        unfold wf_stypeuse in Hwf_Tx.
+                        destruct (bound CT (sctype Tx)) as [q_bound|] eqn:Hbound; [|contradiction].
+                        destruct Hwf_Tx as [_ Hdom].
+                        exact Hdom.
+                      - injection H3 as H3_eq. subst qadapted.
+                        destruct (q_r_proj (rqtype (rt_type obj))).
+                        all: unfold vpa_mutabilty.
+                        all: try apply vpa_type_to_type_mut_cases in Hvpa.
+                        all: try unfold vpa_mutabilty in Hvpa.
+                        all: try destruct q_c.
+                        all: try easy.
+                        all: try destruct (sqtype Tx) eqn:Hex.
+                        all: try easy.
+                        all: apply qualified_type_subtype_q_subtype in H25.
+                        all: simpl in H25.
+                        all: try rewrite Hex in H25. 
+                        all: try easy.
+                        (* all: try (apply constructor_sig_lookup_dom in H14; exact H14). *)
+                        all: try (
+                          unfold wf_senv in Hsenv;
+                          destruct Hsenv as [_ Hforall];
+                          have Hwf_Tx := Forall_nth_error _ _ _ _ Hforall Hnth;
+                          unfold wf_stypeuse in Hwf_Tx;
+                          destruct (bound CT (sctype Tx)) as [q_bound|] eqn:Hbound; [|contradiction];
+                          destruct Hwf_Tx as [_ Hdom];
+                          exact Hdom
+                        ).
+                        all: try (simpl;
+                        apply constructor_sig_lookup_dom in H14;
+                        exact H14).
                 }
           }
       - (* Case: i ≠ x (existing variable) *)
@@ -946,7 +1563,7 @@ Proof.
           destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
           - discriminate Hthis.
           - destruct x as [|x'].
-            + contradiction H3. reflexivity.
+            + easy.
             + simpl. exact Hthis.
             }
             rewrite Hthis_preserved.
@@ -956,12 +1573,12 @@ Proof.
             destruct (runtime_getObj h loc) as [obj|] eqn:Hobj; [|discriminate].
             apply runtime_getObj_dom in Hobj. exact Hobj.
           }
-          assert (Hrtype_ext : r_type (h ++ [{| rt_type := {| rqtype := qadapted; rctype := C |}; fields_map := vals |}]) loc = Some rqt).
+          assert (Hrtype_ext : r_type (h ++ [{| rt_type := {| rqtype := qadapted; rctype := c |}; fields_map := vals |}]) loc = Some rqt).
           {
             unfold r_type in Hrtype |- *.
             rewrite heap_extension_preserves_objects; auto.
           }
-          assert (Hmut_ext : r_muttype (h ++ [{| rt_type := {| rqtype := qadapted; rctype := C |}; fields_map := vals |}]) ι' = Some q).
+          assert (Hmut_ext : r_muttype (h ++ [{| rt_type := {| rqtype := qadapted; rctype := c |}; fields_map := vals |}]) ι' = Some q).
           {
             unfold r_muttype in Hmut |- *.
             assert (Hι'_bound : ι' < dom h).
@@ -977,116 +1594,10 @@ Proof.
           exact Hcorr_orig.
           + contradiction Hcorr_orig.
           }
-  - (* Case: stmt = Call *)
-    intros.
-    inversion H9; subst.
-    unfold wf_r_config in *.
-    destruct H8 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
-    repeat split.
-    + (* wellformed class *) 
-    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
-    + (* Object wellformedness *)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
-    + (* All other classes have super class*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
-    + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
-    + admit.
-    + (* Length of runtime environment greater than 0 *)
-      simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
-      rewrite update_length. rewrite <- Hlen.
-      exact HsenvLength.
-    + destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
-      destruct Hreceiverval as [iot Hiot].
-      exists iot.
-      simpl.
-      unfold gget in *.
-      destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
-      * (* Case: vars rΓ = [] *)
-        exfalso.
-        simpl in HrEnvLen.
-        lia.
-      * (* Case: vars rΓ = v0 :: vs *)
-        simpl.
-        destruct x as [|x'].
-      -- (* Case: x = 0 *)
-        (* This should be impossible - method calls shouldn't assign to receiver *)
-        contradiction H4.
-      reflexivity.
-      -- (* Case: x = S x' *)
-        simpl.
-        (* update (S x') retval (v0 :: vs) = v0 :: update x' retval vs *)
-        simpl in Hiot.
-        destruct Hiot as [Hiot Hiotdom].
-        split.
-        exact Hiot.
-        admit.
-    + 
-    unfold wf_renv in *.
-    destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
-    simpl.
-    apply Forall_update.
-    * (* Show existing values are still well-formed in h' *)
-      eapply Forall_impl; [| exact Hallvals].
-      intros v Hv.
-      destruct v as [|loc]; [trivial|].
-      (* For Iot loc, show runtime_getObj h' loc = Some _ *)
-      (* This follows from heap preservation during method execution *)
-      admit.
-    * (* Show retval is well-formed *)
-      destruct retval as [|loc]; [trivial|].
-      (* retval comes from method execution, so it's well-formed in h' *)
-      (* The return value loc comes from rΓ'' which should be well-formed w.r.t. h' *)
-      assert (Hwf_method_result: wf_renv CT rΓ'' h').
-      {
-        (* This should follow from your evaluation preservation theorem *)
-        (* You need a lemma that method body execution preserves well-formedness *)
-        admit.
-      }
-      unfold wf_renv in Hwf_method_result.
-      destruct Hwf_method_result as [_ [_ Hallvals_method]].
-      (* Use the fact that runtime_getVal rΓ'' (mreturn mbody) = Some (Iot loc) *)
-      assert (Hreturn_bound: mreturn mbody < dom (vars rΓ'')).
-      {
-        apply runtime_getVal_dom in H24.
-        exact H24.
-      }
-      assert (Hretval_wf := Forall_nth_error _ _ _ _ Hallvals_method H24).
-      simpl in Hretval_wf.
-      exact Hretval_wf.
-    * (* x < length (vars rΓ) *)
-      assert (x < dom sΓ) by (apply static_getType_dom in H0; exact H0).
-      rewrite <- Hlen; exact H8.
-    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvLength.
-    + destruct Hsenv as [HsenvLength HsenvWellTyped]. exact HsenvWellTyped.
-    + rewrite update_length. exact Hlen.
-    + intros i Hi sqt Hsqt.
-    destruct (Nat.eq_dec i x) as [Heq | Hneq].
-    * (* Case: i = x *)
-      subst i.
-      (* rewrite update_same. *)
-      (* Use the fact that retval has the correct type from method execution *)
-      (* This follows from your method typing and evaluation preservation *)
-      admit.
-    * (* Case: i ≠ x *)
-      simpl.
-      unfold runtime_getVal.
-      rewrite update_diff; auto.
-        destruct (nth_error (vars rΓ) i) as [v|] eqn:Hval.
-      -- destruct v as [|loc].
-        ++ trivial.
-        ++ (* Need to show wf_r_typable with updated environment and new heap *)
-        admit.
-      -- (* None case *)
-        assert (Hcorr_i := Hcorr i Hi sqt Hsqt).
-            exfalso.
-        assert (i < dom (vars rΓ)) by (rewrite <- Hlen; exact Hi).
-        apply nth_error_None in Hval.
-        lia.
   - (* Case: stmt = Seq *)
-    intros. inversion H1; subst.
-    specialize (IHstmt_typing1 rΓ'0 h'0 rΓ h H H3) as IH1.
-    specialize (IHstmt_typing2 rΓ' h' rΓ'0 h'0 IH1 H6) as IH2.
+    intros. inversion Htyping; subst.
+    specialize (IHHeval1 eq_refl sΓ'0 sΓ Hwf H3) as IH1.
+    specialize (IHHeval2 eq_refl sΓ' sΓ'0 IH1 H5) as IH2.
     exact IH2.
 Admitted.
 
@@ -1116,23 +1627,27 @@ Theorem immutability_pico :
     runtime_getObj h l = Some (mkObj (mkruntime_type Imm_r C) vals) ->
     wf_r_config CT sΓ rΓ h ->
     stmt_typing CT sΓ stmt sΓ' -> 
-    eval_stmt OK rΓ h stmt OK rΓ' h' -> 
+    eval_stmt OK CT rΓ h stmt OK rΓ' h' -> 
     runtime_getObj h' l = Some (mkObj (mkruntime_type Imm_r C) vals') ->
     sf_assignability_rel CT C f Final \/ sf_assignability_rel CT C f RDA ->
     nth_error vals f = nth_error vals' f.
 Proof.
-  intros. remember OK as ok. induction H3; try discriminate.
+  intros. remember OK as ok.
+  generalize dependent sΓ.
+  generalize dependent sΓ'.
+  induction H3; try discriminate.
   - (* Skip *) inversion H4. intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* Local *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* VarAss *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
   - (* FldWrite *) 
   {
+    intros.
     destruct (Nat.eq_dec l lx) as [Heq_l | Hneq_l].
     - (* Case: l = lx (same object being written to) *)
       subst l.
       (* Extract the object type from H0 and H6 *)
-      rewrite H0 in H6.
-      injection H6 as H6_eq.
+      rewrite H0 in H2.
+      injection H2 as H2_eq.
       subst o.
       (* Now we have an immutable object, but can_assign returned true *)
       (* This should be impossible for Final/RDA fields on immutable objects *)
@@ -1141,12 +1656,12 @@ Proof.
         subst f.
         (* Show contradiction: can_assign should be false for immutable Final/RDA fields *)
         exfalso.
-        unfold wf_r_config in H1.
-        destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
-        assert (Hx_bound : x < dom sΓ) by (apply runtime_getVal_dom in H3; rewrite <- Hlen in H3; exact H3).
-        inversion H2; subst.
+        unfold wf_r_config in H8.
+        destruct H8 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+        assert (Hx_bound : x < dom sΓ) by (apply runtime_getVal_dom in H1; rewrite <- Hlen in H1; exact H1).
+        inversion H9; subst.
         specialize (Hcorr x Hx_bound Tx H12).
-        rewrite H3 in Hcorr.
+        rewrite H1 in Hcorr.
         assert (Hsubtype: base_subtype CT C (sctype Tx)).
         {
           unfold wf_r_typable in Hcorr.
@@ -1220,11 +1735,11 @@ Proof.
           exact H17. 
         + 
         assert (Hvals_eq : vals' = [f0 ↦ v2] (vals)).
-        {
+        { 
           (* Use the definition of update_field and the fact that h' contains the updated object *)
-          unfold update_field in H9.
-          rewrite H0 in H9.
-          rewrite H9 in H4.
+          unfold update_field in H7.
+          rewrite H0 in H7.
+          rewrite H7 in H4.
           unfold runtime_getObj in H4.
           (* Apply update_same to get the updated object *)
           assert (Hget_same : nth_error (update lx {| rt_type := {| rqtype := Imm_r; rctype := C |}; fields_map := [f0 ↦ v2] (vals) |} h) lx = 
@@ -1245,17 +1760,12 @@ Proof.
     -
     assert (Hl_unchanged : runtime_getObj h' l = runtime_getObj h l).
     {
-      rewrite H9.
-      unfold update_field.
-      destruct (runtime_getObj h lx) as [o'|] eqn:Hlx_obj.
-      - (* Case: Some o' *)
-        injection H6 as H6_eq. subst o'.
-        unfold runtime_getObj.
-        apply update_diff.
-        symmetry. exact Hneq_l.
-      - (* Case: None - contradicts H6 *)
-        rewrite H6 in Hlx_obj.
-        discriminate.
+      unfold update_field in H7.
+      rewrite H2 in H7.
+      rewrite H7.
+      unfold runtime_getObj.
+      apply update_diff.
+      easy.
     }
     rewrite H0 in Hl_unchanged.
     rewrite Hl_unchanged in H4.
@@ -1275,42 +1785,89 @@ Proof.
   reflexivity.
   - (* Call *) (* Similar to other non-mutating cases *) 
   intros.
-  (* Apply IH to method body execution *)
-  assert (Hwf_method: wf_r_config CT sΓ' rΓ' h).
+  have H3copy := H3.
+  apply method_body_lookup_implies_def_lookup in H3.
+  destruct H3 as [mdef H3].
+  destruct H3 as [Hmdef_lookup Hbody_eq].
+  apply method_body_well_typed in Hmdef_lookup; auto.
+  destruct Hmdef_lookup as [sΓmethodend Hmdef_lookup].
+  apply method_body_lookup_implies_sig_lookup in H3copy.
+  destruct H3copy as [msig H3copy].
+  remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
+  apply IHeval_stmt with (sΓ' := sΓmethodend)(sΓ := sΓmethodinit).
+  exact H.
+  exact H0.
+  easy.
+  exact H4.
+  exact H5.
+  assert (Hwf_method_frame : wf_r_config CT sΓmethodinit 
+                                    rΓ' h).
   {
     unfold wf_r_config in *.
-    destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct H13 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
     repeat split.
-    - (* wellformed class *) 
-    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
-    - (* Object wellformedness *)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
-    - (* All other classes have super class*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
-    - (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. exact Hclassnamematch.
-    - exact Hheap.
-    - rewrite H11. simpl. lia.
-    - exists ly. rewrite H11. simpl. split. reflexivity. unfold r_basetype in H6.
-      destruct (runtime_getObj h ly) as [o|] eqn:Hobj; [apply runtime_getObj_dom in Hobj; exact Hobj | discriminate H6].
-    - admit. (* Where to introduce static environment inside the body*)
-    - admit.
-    - admit.
-    - admit.
-    - admit. 
-  }
-  assert (Htyping_method: stmt_typing CT sΓ mstmt sΓ').
-  {
+    exact Hclass.
+    exact Hobj.
+    exact Hotherclasses.
+    apply Hcname_consistent.
+    apply Hcname_consistent.
+    exact Hheap.
+    rewrite H9.
+    simpl.
+    lia.
+    unfold wf_renv in Hrenv.
+    destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+    exists ly.
+    split.
+    rewrite H9.
+    simpl.
+    reflexivity.
+    unfold runtime_getVal in H1.
+    destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+    injection H1 as H1_eq.
+    subst v.
+    eapply Forall_nth_error in Hallvals; eauto.
+    simpl in Hallvals.
+    destruct (runtime_getObj h ly) as [obj|] eqn:Hobjly; [|contradiction].
+    apply runtime_getObj_dom in Hobjly.
+
+    exact Hobjly.
+    rewrite H9.
+    simpl.
+    constructor.
+    simpl.
+    unfold runtime_getVal in H1.
+    destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+    injection H1 as H1_eq.
+    subst v.
+    unfold runtime_getVal in Hnth_y.
+    unfold wf_renv in Hrenv.
+    destruct Hrenv as [_ [_ Hallvals]].
+    eapply Forall_nth_error in Hallvals; eauto.
+    simpl in Hallvals.
+    exact Hallvals.
+    eapply runtime_lookup_list_preserves_wf_values; eauto.
+
+    rewrite HeqsΓmethodinit.
+    simpl.
+    lia.
+    admit.
+    admit.
     admit.
   }
-  (* specialize (IHeval_stmt H H0 Hwf_method Htyping_method H4) as IH.
-  exact IH. *)
-  admit.
-  - (* Seq *) (* Apply IH transitively *)
+  exact Hwf_method_frame.
+  rewrite -> Hbody_eq in Hmdef_lookup.
+  rewrite <- H6 in Hmdef_lookup.
+  exact Hmdef_lookup. 
+  unfold wf_r_config in H13.
+  destruct H13 as [Hwf_classtable _].
+  exact Hwf_classtable.
+  -  (* Seq *) (* Apply IH transitively *)
   admit.
 Admitted.
 
-Theorem readonly_pico :
+(* Theorem readonly_pico :
     forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs lhs anymethod anyrq,
       stmt = (SFldWrite readonlyx anyf rhs) \/ stmt =  SCall lhs anymethod readonlyx [] -> 
       static_getType sΓ readonlyx = Some qt ->
@@ -1322,10 +1879,8 @@ Theorem readonly_pico :
       runtime_getObj h l = Some (mkObj (mkruntime_type anyrq C) vals) ->
       runtime_getObj h' l = Some (mkObj (mkruntime_type anyrq C) vals') ->
       sf_assignability_rel CT C f Final \/ sf_assignability_rel CT C f RDA ->
-      nth_error vals f = nth_error vals' f.
+      nth_error vals f = nth_error vals' f. *)
       (*This looks like shallow mutability to me, but my language does not allow x.f1.f2 = y.*)
-Proof.
-Admitted.
 
 (* Inductive reachability : heap -> Loc -> Loc -> Prop :=
 

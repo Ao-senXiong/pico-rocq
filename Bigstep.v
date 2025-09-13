@@ -340,79 +340,79 @@ Inductive eval_result :=
 | NPE : eval_result.
 
 (* PICO expression evaluation *)
-Inductive eval_expr : eval_result -> r_env -> heap -> expr -> value -> eval_result -> r_env -> heap -> Prop :=
+Inductive eval_expr : eval_result -> class_table -> r_env -> heap -> expr -> value -> eval_result -> r_env -> heap -> Prop :=
   (* evalutate null expression  *)
-  | EBS_Null : forall rΓ h,
-      eval_expr OK rΓ h ENull Null_a OK rΓ h
+  | EBS_Null : forall CT rΓ h,
+      eval_expr OK CT rΓ h ENull Null_a OK rΓ h
 
   (* evaluate value expression *)
-  | EBS_Val : forall rΓ h x v,
+  | EBS_Val : forall CT rΓ h x v,
       runtime_getVal rΓ x = Some v ->
-      eval_expr OK rΓ h (EVar x) v OK rΓ h
+      eval_expr OK CT rΓ h (EVar x) v OK rΓ h
 
   (* evaluate field access expression *)  
-  | EBS_Field : forall rΓ h x f v o v1,
+  | EBS_Field : forall CT rΓ h x f v o v1,
       runtime_getVal rΓ x = Some (Iot v) ->
       runtime_getObj h v = Some o ->
       getVal o.(fields_map) f = Some v1 ->
-      eval_expr OK rΓ h (EField x f) v1 OK rΓ h
+      eval_expr OK CT rΓ h (EField x f) v1 OK rΓ h
 
   (* evaluate field access expression yields NPE *)
-  | EBS_Field_NPE : forall rΓ h x f v,
+  | EBS_Field_NPE : forall CT rΓ h x f v,
       runtime_getVal rΓ x = Some (Null_a) ->
-      eval_expr OK rΓ h (EField x f) v NPE rΓ h
+      eval_expr OK CT rΓ h (EField x f) v NPE rΓ h
   .
 Notation "rΓ ',' h '⟦' e '⟧' '-->' v ',' rΓ' ',' h'" := (eval_expr OK rΓ h e v OK rΓ' h') (at level 80).
 
 (* PICO Statement evaluation *)
-Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_env -> heap -> Prop :=
+Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eval_result -> r_env -> heap -> Prop :=
   (* evaluate skip statement *)
-  | SBS_Skip : forall rΓ h,
-      eval_stmt OK rΓ h SSkip OK rΓ h
+  | SBS_Skip : forall CT rΓ h,
+      eval_stmt OK CT rΓ h SSkip OK rΓ h
 
   (* evaluate local variable declaration statement *)
-  | SBS_Local : forall rΓ h T x,
+  | SBS_Local : forall CT rΓ h T x,
       runtime_getVal rΓ x = None ->
-      eval_stmt OK rΓ h (SLocal T x) OK
+      eval_stmt OK CT rΓ h (SLocal T x) OK
       (* (rΓ <|vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
       (rΓ <|vars := rΓ.(vars)++[Null_a] |> )
       h
 
   (* evaluate variable assignment statement *)
-  | SBS_Assign : forall rΓ h x e v1 v2,
+  | SBS_Assign : forall CT rΓ h x e v1 v2,
       runtime_getVal rΓ x = Some v1 ->
-      eval_expr OK rΓ h e v2 OK rΓ h ->
-      eval_stmt OK rΓ h (SVarAss x e) OK
+      eval_expr OK CT rΓ h e v2 OK rΓ h ->
+      eval_stmt OK CT rΓ h (SVarAss x e) OK
       (* (rΓ <|vars := update x v2 rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
       (rΓ <|vars := update x v2 rΓ.(vars)|>)
       h
 
-  | SBS_Assign_NPE : forall rΓ h x e v1 v2 rΓ' h',
+  | SBS_Assign_NPE : forall CT rΓ h x e v1 v2 rΓ' h',
     runtime_getVal rΓ x = Some v1 ->
-    eval_expr OK rΓ h e v2 NPE rΓ h ->
-    eval_stmt OK rΓ h (SVarAss x e) NPE
+    eval_expr OK CT rΓ h e v2 NPE rΓ h ->
+    eval_stmt OK CT rΓ h (SVarAss x e) NPE
     (* (rΓ <|vars := update x v2 rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
     (* (rΓ <|vars := update x v2 rΓ.(vars)|>) *)
     rΓ'
     h'
 
   (* evaluate field write statement *)
-  | SBS_FldWrite: forall rΓ h x f y lx o vf v2 h',
+  | SBS_FldWrite: forall CT rΓ h x f y lx o vf v2 h',
       runtime_getVal rΓ x = Some (Iot lx) ->
       runtime_getObj h lx = Some o ->
       getVal o.(fields_map) f = Some vf ->
       runtime_getVal rΓ y = Some v2 ->
       (* can_assign CT rΓ h lx f = true -> *) (* Runtime need no check *)
       h' = update_field h lx f v2 ->
-      eval_stmt OK rΓ h (SFldWrite x f y) OK rΓ h'
+      eval_stmt OK CT rΓ h (SFldWrite x f y) OK rΓ h'
 
   (* evaluate field write statement NPE *)
-  | SBS_FldWrite_NPE: forall rΓ h x f y rΓ' h',
+  | SBS_FldWrite_NPE: forall CT rΓ h x f y rΓ' h',
       runtime_getVal rΓ x = Some (Null_a) ->
-      eval_stmt OK rΓ h (SFldWrite x f y) NPE rΓ' h'
+      eval_stmt OK CT rΓ h (SFldWrite x f y) NPE rΓ' h'
 
   (* evaluate object creation statement *)
-  | SBS_New: forall rΓ h x (q_c:q) c ys vals l1 qthisr qthis qadapted o rΓ' h',
+  | SBS_New: forall CT rΓ h x (q_c:q) c ys vals l1 qthisr qthis qadapted o rΓ' h',
       runtime_getVal rΓ 0 = Some (Iot l1) ->
       runtime_lookup_list rΓ ys = Some vals ->
       r_muttype h l1 = Some qthisr ->
@@ -421,7 +421,7 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
       o = mkObj (mkruntime_type qadapted c) (vals) ->
       h' = h++[o] ->
       rΓ' = rΓ <| vars := update x (Iot (dom h)) rΓ.(vars) |> ->
-      eval_stmt OK rΓ h (SNew x q_c c ys) OK rΓ' h'
+      eval_stmt OK CT rΓ h (SNew x q_c c ys) OK rΓ' h'
 
   (* evaluate method call statement *)
   | SBS_Call: forall CT rΓ h x y m zs vals ly cy mbody mstmt mret retval h' rΓ' rΓ'' rΓ''',
@@ -433,15 +433,15 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
     runtime_lookup_list rΓ zs = Some vals ->
     (* rΓ' = mkr_env (Iot ly :: vals) rΓ.(init_state) -> *)
     rΓ' = mkr_env (Iot ly :: vals) ->
-    eval_stmt OK rΓ' h mstmt OK rΓ'' h' ->
+    eval_stmt OK CT rΓ' h mstmt OK rΓ'' h' ->
     runtime_getVal rΓ'' mret = Some retval ->
     rΓ''' = rΓ <| vars := update x retval rΓ.(vars) |> ->
-    eval_stmt OK rΓ h (SCall x m y zs) OK rΓ''' h'
+    eval_stmt OK CT rΓ h (SCall x m y zs) OK rΓ''' h'
 
   (* evaluate method call statement NPE *)
-  | SBS_Call_NPE: forall rΓ h x y m zs rΓ' h',
+  | SBS_Call_NPE: forall CT rΓ h x y m zs rΓ' h',
       runtime_getVal rΓ y = Some (Null_a) ->
-      eval_stmt OK rΓ h (SCall x m y zs) NPE rΓ' h'
+      eval_stmt OK CT rΓ h (SCall x m y zs) NPE rΓ' h'
 
   | SBS_Call_NPE_Body: forall CT rΓ h x y m zs vals ly cy mbody mstmt mret h' rΓ' rΓ'',
     runtime_getVal rΓ y = Some (Iot ly) ->
@@ -452,23 +452,23 @@ Inductive eval_stmt : eval_result -> r_env -> heap -> stmt -> eval_result -> r_e
     runtime_lookup_list rΓ zs = Some vals ->
     (* rΓ' = mkr_env (Iot ly :: vals) rΓ.(init_state) -> *)
     rΓ' = mkr_env (Iot ly :: vals) ->
-    eval_stmt OK rΓ' h mstmt NPE rΓ'' h' ->
-    eval_stmt OK rΓ h (SCall x m y zs) NPE rΓ'' h'
+    eval_stmt OK CT rΓ' h mstmt NPE rΓ'' h' ->
+    eval_stmt OK CT rΓ h (SCall x m y zs) NPE rΓ'' h'
 
   (* evaluate sequence of statements *)
-  | SBS_Seq: forall rΓ h s1 s2 rΓ' h' rΓ'' h'',
-      eval_stmt OK rΓ h s1 OK rΓ' h' ->
-      eval_stmt OK rΓ' h' s2 OK rΓ'' h'' ->
-      eval_stmt OK rΓ h (SSeq s1 s2) OK rΓ'' h''
+  | SBS_Seq: forall CT rΓ h s1 s2 rΓ' h' rΓ'' h'',
+      eval_stmt OK CT rΓ h s1 OK rΓ' h' ->
+      eval_stmt OK CT rΓ' h' s2 OK rΓ'' h'' ->
+      eval_stmt OK CT rΓ h (SSeq s1 s2) OK rΓ'' h''
 
-  | SBS_Seq_NPE_first: forall rΓ h s1 s2 rΓ' h',
-      eval_stmt OK rΓ h s1 NPE rΓ' h' ->
-      eval_stmt OK rΓ h (SSeq s1 s2) NPE rΓ' h'
+  | SBS_Seq_NPE_first: forall CT rΓ h s1 s2 rΓ' h',
+      eval_stmt OK CT rΓ h s1 NPE rΓ' h' ->
+      eval_stmt OK CT rΓ h (SSeq s1 s2) NPE rΓ' h'
 
-  | SBS_Seq_NPE_second: forall rΓ h s1 s2 rΓ' h' rΓ'' h'',
-      eval_stmt OK rΓ h s1 OK rΓ' h' ->
-      eval_stmt OK rΓ' h' s2 NPE rΓ'' h'' ->
-      eval_stmt OK rΓ h (SSeq s1 s2) NPE rΓ'' h''
+  | SBS_Seq_NPE_second: forall CT rΓ h s1 s2 rΓ' h' rΓ'' h'',
+      eval_stmt OK CT rΓ h s1 OK rΓ' h' ->
+      eval_stmt OK CT rΓ' h' s2 NPE rΓ'' h'' ->
+      eval_stmt OK CT rΓ h (SSeq s1 s2) NPE rΓ'' h''
 .
 
 Lemma vpa_qualified_type_preserves_subtype : forall CT q T1 T2,
@@ -979,7 +979,7 @@ Qed.
 Lemma expr_eval_preservation : forall CT sΓ rΓ h e v rΓ' h' T,
   wf_r_config CT sΓ rΓ h ->
   expr_has_type CT sΓ e T ->
-  eval_expr OK rΓ h e v OK rΓ' h' ->
+  eval_expr OK CT rΓ h e v OK rΓ' h' ->
   match v with
   | Null_a => True
   | Iot loc => wf_r_typable CT rΓ h loc T
@@ -1385,4 +1385,84 @@ Proof.
   *  exfalso.
     exact Hforall2.
   - exfalso. inversion Hevalcopy.
+Qed.
+
+Lemma runtime_lookup_list_preserves_wf_values : forall CT rΓ h zs vals0,
+  wf_renv CT rΓ h ->
+  runtime_lookup_list rΓ zs = Some vals0 ->
+  Forall (fun v => match v with 
+    | Null_a => True 
+    | Iot loc => match runtime_getObj h loc with Some _ => True | None => False end 
+    end) vals0.
+Proof.
+  intros CT rΓ h zs vals0 Hwf_renv Hlookup.
+  unfold runtime_lookup_list in Hlookup.
+  unfold wf_renv in Hwf_renv.
+  destruct Hwf_renv as [_ [_ Hallvals]].
+  
+  (* Prove by induction on zs and vals0 simultaneously *)
+  generalize dependent vals0.
+  induction zs as [|z zs' IH]; intros vals0 Hlookup.
+  - (* Base case: zs = [] *)
+    simpl in Hlookup.
+    injection Hlookup as Hlookup.
+    subst vals0.
+    constructor.
+  - (* Inductive case: zs = z :: zs' *)
+    simpl in Hlookup.
+    destruct (runtime_getVal rΓ z) as [v|] eqn:Hv; [|discriminate].
+    destruct (mapM (runtime_getVal rΓ) zs') as [vs|] eqn:Hvs; [|discriminate].
+    injection Hlookup as Hlookup.
+    subst vals0.
+    constructor.
+    + (* Show v is well-formed *)
+      destruct v as [|loc].
+      * (* Case: Null_a *)
+        trivial.
+      * (* Case: Iot loc *)
+        assert (Hloc_bound : z < dom (vars rΓ)).
+        {
+          apply runtime_getVal_dom in Hv.
+          exact Hv.
+        }
+        assert (Hloc_wf := Forall_nth_error _ _ _ _ Hallvals Hv).
+        simpl in Hloc_wf.
+        exact Hloc_wf.
+    + (* Show vs is well-formed *)
+      apply IH.
+      reflexivity.
+Qed.
+
+Lemma method_frame_vals_wf : forall CT rΓ h ly vals0 zs cy,
+  wf_renv CT rΓ h ->
+  r_basetype h ly = Some cy ->
+  runtime_lookup_list rΓ zs = Some vals0 ->
+  Forall (fun value => match value with
+    | Null_a => True
+    | Iot loc => match runtime_getObj h loc with Some _ => True | None => False end
+    end) (Iot ly :: vals0).
+Proof.
+  intros CT rΓ h ly vals0 zs cy Hwf_renv Hly_base Hlookup.
+  constructor.
+  - (* First element: Iot ly *)
+    simpl.
+    unfold r_basetype in Hly_base.
+    destruct (runtime_getObj h ly) as [obj|] eqn:Hobj; [trivial | discriminate Hly_base].
+  - (* Rest of the list: vals0 *)
+    eapply runtime_lookup_list_preserves_wf_values; eauto.
+Qed.
+
+Lemma wf_class_in_table : forall CT C,
+  wf_class_table CT ->
+  wf_class CT C ->
+  cname (signature C) < dom CT ->
+  find_class CT (cname (signature C)) = Some C.
+Proof.
+  intros CT C Hwf_ct Hwf_class Hdom.
+  unfold wf_class_table in Hwf_ct.
+  destruct Hwf_ct as [Hforall [_ [_ Hcname_consistent]]].
+  
+  (* Use the bidirectional consistency directly *)
+  apply Hcname_consistent.
+  reflexivity.
 Qed.

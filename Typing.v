@@ -510,6 +510,51 @@ Definition method_body_lookup (CT : class_table) (C : class_name) (m : method_na
   | None => None
   end.
 
+Lemma method_body_lookup_implies_sig_lookup : forall CT C m mbody,
+  method_body_lookup CT C m = Some mbody ->
+  exists msig, method_sig_lookup CT C m = Some msig.
+Proof.
+  intros CT C m mbody H.
+  unfold method_body_lookup in H.
+  unfold method_sig_lookup.
+  destruct (mdef_lookup (length CT) CT C m) as [mdef|] eqn:Hmdef.
+  - injection H as H_eq. subst mbody.
+    exists (msignature mdef).
+    reflexivity.
+  - discriminate H.
+Qed.
+
+Lemma method_body_lookup_implies_def_lookup : forall CT C m mebody,
+  method_body_lookup CT C m = Some mebody ->
+  exists mdef, method_def_lookup CT C m = Some mdef /\ (mbody mdef) = mebody.
+Proof.
+  intros CT C m mebody H.
+  unfold method_body_lookup in H.
+  unfold method_def_lookup.
+  destruct (mdef_lookup (length CT) CT C m) as [mdef|] eqn:Hmdef.
+  - injection H as H_eq. subst mebody.
+    exists mdef.
+    split.
+    + reflexivity.
+    + reflexivity.
+  - discriminate H.
+Qed.
+
+Lemma method_sig_lookup_implies_body_lookup : forall CT C m msig,
+  method_sig_lookup CT C m = Some msig ->
+  exists mbody, method_body_lookup CT C m = Some mbody.
+Proof.
+  intros CT C m msig H.
+  unfold method_sig_lookup in H.
+  unfold method_body_lookup.
+  destruct (mdef_lookup (length CT) CT C m) as [mdef|] eqn:Hmdef.
+  - injection H as H_eq. subst msig.
+    exists (mbody mdef).
+    reflexivity.
+  - discriminate H.
+Qed.
+
+
 (* STATIC WELLFORMEDNESS CONDITION *)
 (* Well-formedness of type use *)
 Definition wf_stypeuse (CT : class_table) (q1: q) (c: class_name) : Prop :=
@@ -845,7 +890,7 @@ Definition wf_class_table (CT : class_table) : Prop :=
   (forall i def, i > 0 -> find_class CT i = Some def -> 
                  super (signature def) <> None) /\
   (* Class name matches index *)
-  (forall i def, find_class CT i = Some def -> 
+  (forall i def, find_class CT i = Some def <-> 
                  cname (signature def) = i).
 
 Lemma find_class_cname_consistent : forall CT i def,
