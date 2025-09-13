@@ -862,9 +862,9 @@ Proof.
 Qed.
 
 (* evaluation preserves runtime type on heap. *)
-Lemma runtime_preserves_r_type_heap : forall rΓ h loc C h' vals s rΓ',
+Lemma runtime_preserves_r_type_heap : forall CT rΓ h loc C h' vals s rΓ',
   runtime_getObj h loc = Some {| rt_type := C; fields_map := vals |}->
-  eval_stmt OK rΓ h s OK rΓ' h' ->
+  eval_stmt OK CT rΓ h s OK rΓ' h' ->
   exists vals', runtime_getObj h' loc = Some {| rt_type := C; fields_map := vals' |}.
 Proof.
   intros. remember OK as ok. induction H0; subst; try discriminate.
