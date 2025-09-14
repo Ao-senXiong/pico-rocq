@@ -2024,19 +2024,11 @@ Proof.
   intros. remember OK as ok.
   generalize dependent sΓ.
   generalize dependent sΓ'.
-  (* generalize dependent vals. generalize dependent vals'.
-  generalize dependent sΓ. generalize dependent sΓ'. *)
+  generalize dependent vals. generalize dependent vals'.
   induction H3; try discriminate.
-  (* 7:{ inversion H2; subst.
-    (* replace the assertions with eval_stmt_preserves_heap_domain. *)
-    assert (dom h <= dom h') by admit.
-    assert (l < dom h') by lia. specialize (runtime_getObj_Some h' l H6) as [C' [values' Hh']].
-    assert (C' = {| rqtype := Imm_r; rctype := C |}).
-    {  }
-    specialize (IHeval_stmt1 H Heqok sΓ sΓ'0 H1 H9 vals H0 vals'). exact IHeval_stmt. } *)
-  - (* Skip *) inversion H4. intros; subst; rewrite H0 in H4; injection H4; auto.
-  - (* Local *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
-  - (* VarAss *) inversion H4; intros; subst; rewrite H0 in H4; injection H4; auto.
+  - (* Skip *) intros; inversion H4; subst; rewrite H0 in H4; injection H4; auto.
+  - (* Local *) intros; inversion H4; subst; rewrite H1 in H4; injection H4; auto.
+  - (* VarAss *) intros; inversion H4; subst; rewrite H2 in H4; injection H4; auto.
   - (* FldWrite *) 
   {
     intros.
@@ -2044,8 +2036,8 @@ Proof.
     - (* Case: l = lx (same object being written to) *)
       subst l.
       (* Extract the object type from H0 and H6 *)
-      rewrite H0 in H2.
-      injection H2 as H2_eq.
+      rewrite H7 in H1.
+      injection H1 as H1_eq.
       subst o.
       (* Now we have an immutable object, but can_assign returned true *)
       (* This should be impossible for Final/RDA fields on immutable objects *)
@@ -2056,16 +2048,16 @@ Proof.
         exfalso.
         unfold wf_r_config in H8.
         destruct H8 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
-        assert (Hx_bound : x < dom sΓ) by (apply runtime_getVal_dom in H1; rewrite <- Hlen in H1; exact H1).
+        assert (Hx_bound : x < dom sΓ) by (apply runtime_getVal_dom in H0; rewrite <- Hlen in H0; exact H0).
         inversion H9; subst.
         specialize (Hcorr x Hx_bound Tx H12).
-        rewrite H1 in Hcorr.
+        rewrite H0 in Hcorr.
         assert (Hsubtype: base_subtype CT C (sctype Tx)).
         {
           unfold wf_r_typable in Hcorr.
           destruct (r_type h lx) as [rqt|] eqn:Hrtype; [|contradiction].
           unfold r_type in Hrtype.
-          rewrite H0 in Hrtype.
+          rewrite H7 in Hrtype.
           simpl in Hrtype.
           injection Hrtype as Hrtype_eq.
           destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
@@ -2107,7 +2099,7 @@ Proof.
         unfold wf_r_typable in Hcorr.
         destruct HARDA as [HsqtypeMut _].
         unfold r_type in Hcorr.
-        rewrite H0 in Hcorr.
+        rewrite H7 in Hcorr.
         simpl in Hcorr.
         destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction].
         destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction].
@@ -2135,10 +2127,10 @@ Proof.
         assert (Hvals_eq : vals' = [f0 ↦ v2] (vals)).
         { 
           (* Use the definition of update_field and the fact that h' contains the updated object *)
-          unfold update_field in H7.
-          rewrite H0 in H7.
+          unfold update_field in H4.
           rewrite H7 in H4.
-          unfold runtime_getObj in H4.
+          rewrite H4 in H6.
+          unfold runtime_getObj in H6.
           (* Apply update_same to get the updated object *)
           assert (Hget_same : nth_error (update lx {| rt_type := {| rqtype := Imm_r; rctype := C |}; fields_map := [f0 ↦ v2] (vals) |} h) lx = 
                               Some {| rt_type := {| rqtype := Imm_r; rctype := C |}; fields_map := [f0 ↦ v2] (vals) |}).
@@ -2146,9 +2138,9 @@ Proof.
             apply update_same.
             exact H.
           }
-          rewrite Hget_same in H4.
-          injection H4 as H4_eq.
-          symmetry. exact H4_eq.
+          rewrite Hget_same in H6.
+          injection H6 as H6_eq.
+          symmetry. exact H6_eq.
         }
         rewrite Hvals_eq.
         unfold getVal.
@@ -2158,42 +2150,37 @@ Proof.
     -
     assert (Hl_unchanged : runtime_getObj h' l = runtime_getObj h l).
     {
-      unfold update_field in H7.
-      rewrite H2 in H7.
-      rewrite H7.
+      unfold update_field in H4.
+      rewrite H1 in H4.
+      rewrite H4.
       unfold runtime_getObj.
       apply update_diff.
       easy.
     }
-    rewrite H0 in Hl_unchanged.
-    rewrite Hl_unchanged in H4.
-    injection H4 as H4_eq.
-    rewrite <- H4_eq.
+    rewrite H7 in Hl_unchanged.
+    rewrite Hl_unchanged in H6.
+    injection H6 as H6_eq.
+    rewrite <- H6_eq.
     reflexivity.
   }
   - (* New *) (* h' = h ++ [new_obj], so l < dom h means same object *)
   intros.
   inversion H4; subst.
   (* Since l < dom h, the object at location l is unchanged *)
-  unfold runtime_getObj in H14.
-  rewrite List.nth_error_app1 in H14; auto.
-  unfold runtime_getObj in H0.
-  rewrite H0 in H14.
-  injection H14; intros; subst.
+  unfold runtime_getObj in H9.
+  rewrite List.nth_error_app1 in H9; auto.
+  unfold runtime_getObj in H10.
+  rewrite H10 in H9.
+  injection H9; intros; subst.
   reflexivity.
   - (* Call *) (* Similar to other non-mutating cases *) 
   intros.
-  destruct H3 as [mdeflookup getmbody].
+  destruct H2 as [mdeflookup getmbody].
   remember (msignature mdef) as msig.
   apply method_body_well_typed in mdeflookup; auto.
   destruct mdeflookup as [sΓmethodend Htyping_method].
   remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
-  apply IHeval_stmt with (sΓ' := sΓmethodend)(sΓ := sΓmethodinit).
-  exact H.
-  exact H0.
-  easy.
-  exact H4.
-  exact H5.
+  apply IHeval_stmt with (sΓ' := sΓmethodend)(sΓ := sΓmethodinit). 1-5: auto.
   assert (Hwf_method_frame : wf_r_config CT sΓmethodinit 
                                     rΓ' h).
   {
@@ -2208,19 +2195,19 @@ Proof.
     apply Hcname_consistent.
     apply Hcname_consistent.
     exact Hheap.
-    rewrite H9.
+    rewrite H7.
     simpl.
     lia.
     unfold wf_renv in Hrenv.
     destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
     exists ly.
     split.
-    rewrite H9.
+    rewrite H7.
     simpl.
     reflexivity.
-    unfold runtime_getVal in H1.
+    unfold runtime_getVal in H0.
     destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
-    injection H1 as H1_eq.
+    injection H0 as H0_eq.
     subst v.
     eapply Forall_nth_error in Hallvals; eauto.
     simpl in Hallvals.
@@ -2228,13 +2215,13 @@ Proof.
     apply runtime_getObj_dom in Hobjly.
 
     exact Hobjly.
-    rewrite H9.
+    rewrite H7.
     simpl.
     constructor.
     simpl.
-    unfold runtime_getVal in H1.
+    unfold runtime_getVal in H0.
     destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
-    injection H1 as H1_eq.
+    injection H0 as H0_eq.
     subst v.
     unfold runtime_getVal in Hnth_y.
     unfold wf_renv in Hrenv.
@@ -2253,9 +2240,9 @@ Proof.
     constructor.
     (* Receiver type is well-formed *)
     eapply method_sig_wf_reciever; eauto.
-    unfold r_basetype in H2.
+    unfold r_basetype in H1.
     destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
-    injection H2 as H2_eq.
+    injection H1 as H1_eq.
     subst cy.
     destruct obj as [rt_obj fields_obj].
     destruct rt_obj as [rq_obj rc_obj].
@@ -2274,9 +2261,9 @@ Proof.
     admit.
 
     eapply method_sig_wf_parameters; eauto.
-    unfold r_basetype in H2.
+    unfold r_basetype in H1.
     destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
-    injection H2 as H2_eq.
+    injection H1 as H1_eq.
     subst cy.
     destruct obj as [rt_obj fields_obj].
     destruct rt_obj as [rq_obj rc_obj].
@@ -2300,14 +2287,14 @@ Proof.
   }
   exact Hwf_method_frame.
   rewrite <- getmbody in Htyping_method.
-  rewrite <- H6 in Htyping_method.
+  rewrite <- H3 in Htyping_method.
   exact Htyping_method. 
   unfold wf_r_config in H13.
   destruct H13 as [Hwf_classtable _].
   exact Hwf_classtable.
-  unfold r_basetype in H2.
+  unfold r_basetype in H1.
   destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
-  injection H2 as H2_eq.
+  injection H1 as H1_eq.
   subst cy.
   destruct obj as [rt_obj fields_obj].
   destruct rt_obj as [rq_obj rc_obj].
@@ -2325,6 +2312,14 @@ Proof.
   exact Hwf_rtypeuse.
   contradiction.
   -  (* Seq *) (* Apply IH transitively *)
-  admit.
+  intros. inversion H2; subst. 
+  specialize (eval_stmt_preserves_heap_domain_simple CT rΓ h s1 rΓ' h' H3_) as Hh'.
+  assert (l < dom h') by lia. specialize (runtime_getObj_Some h' l H3) as [C' [values' Hh'some]].
+  specialize (runtime_preserves_r_type_heap CT rΓ h l ({| rqtype := Imm_r; rctype := C |})
+  h' vals s1 rΓ' H0 H3_) as [vals1 Hrtype]. rewrite Hrtype in Hh'some; inversion Hh'some; subst.
+  specialize (IHeval_stmt1 H Heqok H5 values' Hrtype vals H0 sΓ'0 sΓ H1 H10). 
+  specialize (preservation_pico CT sΓ rΓ h s1 rΓ' h' sΓ'0 H1 H10 H3_) as Hwf'.
+  specialize (IHeval_stmt2 H3 Heqok H5 vals' H4 values' Hrtype sΓ' sΓ'0 Hwf' H12). 
+  rewrite IHeval_stmt2 in IHeval_stmt1; auto.
 Admitted.
 
