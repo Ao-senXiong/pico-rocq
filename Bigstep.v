@@ -280,7 +280,7 @@ Qed. *)
 
 (* Wellformed Runtime Config: if (1) heap is well formed (2) static env is well formed (3) runtime env is well formed (4) the static env and run time env corresponds  *)
 Definition wf_r_config (CT: class_table) (sΓ: s_env) (rΓ: r_env) (h: heap)  : Prop :=
-  (* class_def in CT are wellformed  TODO: change this to wellformed ty*)
+  (* CT is well-formed *)
   wf_class_table CT /\
   (* Heap is well-formed *)
   wf_heap CT h /\
@@ -424,10 +424,10 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
       eval_stmt OK CT rΓ h (SNew x q_c c ys) OK rΓ' h'
 
   (* evaluate method call statement *)
-  | SBS_Call: forall CT rΓ h x y m zs vals ly cy mbody mstmt mret retval h' rΓ' rΓ'' rΓ''',
+  | SBS_Call: forall CT rΓ h x y m zs vals ly cy mdef mbody mstmt mret retval h' rΓ' rΓ'' rΓ''',
     runtime_getVal rΓ y = Some (Iot ly) ->
     r_basetype h ly = Some cy ->
-    method_body_lookup CT cy m = Some mbody ->
+    MethodLookup CT cy m mdef /\ mbody = Syntax.mbody mdef ->
     mstmt = mbody.(mbody_stmt) ->
     mret = mbody.(mreturn) ->
     runtime_lookup_list rΓ zs = Some vals ->
@@ -443,10 +443,10 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
       runtime_getVal rΓ y = Some (Null_a) ->
       eval_stmt OK CT rΓ h (SCall x m y zs) NPE rΓ' h'
 
-  | SBS_Call_NPE_Body: forall CT rΓ h x y m zs vals ly cy mbody mstmt mret h' rΓ' rΓ'',
+  | SBS_Call_NPE_Body: forall CT rΓ h x y m zs vals ly cy mdef mbody mstmt mret h' rΓ' rΓ'',
     runtime_getVal rΓ y = Some (Iot ly) ->
     r_basetype h ly = Some cy ->
-    method_body_lookup CT cy m = Some mbody ->
+    MethodLookup CT cy m mdef /\ mbody = Syntax.mbody mdef ->
     mstmt = mbody.(mbody_stmt) ->
     mret = mbody.(mreturn) ->
     runtime_lookup_list rΓ zs = Some vals ->

@@ -44,7 +44,7 @@ Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
   | base_extends : forall (CT : class_table) (C D : class_name),
       C < dom CT ->
       D < dom CT ->
-      parent CT C = Some D ->
+      parent_lookup CT C = Some D ->
       base_subtype CT C D.
 Global Hint Constructors base_subtype: typ.
 

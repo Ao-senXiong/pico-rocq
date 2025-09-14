@@ -894,7 +894,7 @@ Definition bound (CT : class_table) (C : class_name) : option q :=
   end.
 
 (* Parent class lookup in the class table *)
-Definition parent (CT : class_table) (C : class_name) : option class_name :=
+Definition parent_lookup (CT : class_table) (C : class_name) : option class_name :=
   match find_class CT C with
   | Some def => super (signature def)
   | None => None

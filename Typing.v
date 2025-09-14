@@ -125,11 +125,11 @@ Proof.
   - (* Direct inheritance: C extends D *)
     destruct (find_class CT C) as [def|] eqn:Hfind.
     apply (field_inheritance_preserves_type CT C D def f fdef); auto.
-    unfold parent in H1.
+    unfold parent_lookup in H1.
     rewrite Hfind in H1.
     simpl in H1.
     exact H1.
-    unfold parent in H1.
+    unfold parent_lookup in H1.
     rewrite Hfind in H1.
     discriminate H1.
 Qed.
@@ -472,88 +472,144 @@ Definition eq_method_name (m1 m2 : method_name) : bool :=
   | n1, n2 => Nat.eqb n1 n2
   end.
 
-(* Method def lookup *)
-Fixpoint mdef_lookup (fuel : nat) (CT : class_table) (C : class_name) (m : method_name) : option method_def :=
-  match fuel with
-  | O => None
-  | S fuel' =>
-    match find_class CT C with
-    | None => None
-    | Some def =>
-      match find (fun mdef => eq_method_name (mname (msignature mdef)) m)
-                 (methods (body def)) with
-      | Some mdef => Some mdef
-      | None =>
-        match super (signature def) with
-        | None => None
-        | Some superC => mdef_lookup fuel' CT superC m
-        end
-      end
-    end
-  end.
+Definition gget_method (methods : list method_def) (m : method_name) : option method_def :=
+  find (fun mdef => eq_method_name (mname (msignature mdef)) m) methods.
 
-(* Method definition lookup  *)
-Definition method_def_lookup (CT : class_table) (C : class_name) (m : method_name) : option method_def :=
-  mdef_lookup (length CT) CT C m.
+Definition override (parent_methods own_methods : list method_def) : list method_def :=
+  own_methods ++ filter (fun pmdef => 
+    negb (existsb (fun omdef => 
+      eq_method_name (mname (msignature pmdef)) (mname (msignature omdef))) 
+    own_methods)) parent_methods.
 
-(* Method signature lookup *)
-Definition method_sig_lookup (CT : class_table) (C : class_name) (m : method_name) : option (method_sig) :=
-  match mdef_lookup (length CT) CT C m with
-  | Some mdef => Some mdef.(msignature)
-  | None => None
-  end.
-
-(* Method body lookup *)
-Definition method_body_lookup (CT : class_table) (C : class_name) (m : method_name) : option method_body :=
-  match mdef_lookup (length CT) CT C m with
-  | Some mdef => Some mdef.(mbody)
-  | None => None
-  end.
-
-Lemma method_body_lookup_implies_sig_lookup : forall CT C m mbody,
-  method_body_lookup CT C m = Some mbody ->
-  exists msig, method_sig_lookup CT C m = Some msig.
+Inductive CollectMethods : class_table -> class_name -> list method_def -> Prop :=
+  (* Class not found *)
+  | CM_NotFound : forall CT C,
+      find_class CT C = None ->
+      CollectMethods CT C []
+  (* Object class: no superclass *)
+  | CM_Object : forall CT C def,
+      find_class CT C = Some def ->
+      super (signature def) = None ->
+      C < dom CT ->
+      CollectMethods CT C (methods (body def))
+  (* Class with superclass *)
+  | CM_Inherit : forall CT C def parent parent_methods own_methods merged,
+      find_class CT C = Some def ->
+      super (signature def) = Some parent ->
+      C < dom CT ->
+      parent < dom CT ->
+      cname (signature def) > parent ->
+      CollectMethods CT parent parent_methods ->
+      own_methods = methods (body def) ->
+      (* overriding resolution: own_methods shadow parent_methods *)
+      merged = override parent_methods own_methods ->
+      CollectMethods CT C merged.
+ 
+Lemma collect_methods_deterministic : forall CT C methods1 methods2,
+  CollectMethods CT C methods1 ->
+  CollectMethods CT C methods2 ->
+  methods1 = methods2.
 Proof.
-  intros CT C m mbody H.
-  unfold method_body_lookup in H.
-  unfold method_sig_lookup.
-  destruct (mdef_lookup (length CT) CT C m) as [mdef|] eqn:Hmdef.
-  - injection H as H_eq. subst mbody.
-    exists (msignature mdef).
+  intros CT C methods1 methods2 H1 H2.
+  generalize dependent methods2.
+  induction H1; intros.
+  inversion H2; subst.
+  - (* Both CM_NotFound *)
     reflexivity.
-  - discriminate H.
+  - (* CM_NotFound vs CM_Object - contradiction *)
+    rewrite H in H0. discriminate.
+  - (* CM_NotFound vs CM_Inherit - contradiction *)
+    rewrite H in H0. discriminate.
+  - (* CM_Object vs CM_NotFound - contradiction *)
+    inversion H2; subst.
+    -- (* CM_NotFound case *)
+      rewrite H in H3.
+      discriminate.
+    -- (* CM_Object case *)
+      rewrite H in H3.
+      injection H3 as Heq.
+      subst def0.
+      reflexivity.
+    -- (* CM_Inherit case *)
+      rewrite H in H3.
+      injection H3 as Heq.
+      subst def0.
+      rewrite H0 in H4.
+      discriminate.
+  - inversion H7; subst.
+    -- (* CM_NotFound case *)
+      rewrite H in H8.
+      discriminate.
+    -- (* CM_Object case *)
+      rewrite H in H8.
+      injection H8 as Heq.
+      subst def0.
+      rewrite H0 in H9.
+      discriminate.
+    -- (* CM_Inherit case *)
+      rewrite H in H8.
+      injection H8 as Heq.
+      subst def0.
+      rewrite H0 in H9.
+      injection H9 as Heq.
+      subst parent0.
+      assert (parent_methods = parent_methods0) by (apply IHCollectMethods; exact H13).
+      subst parent_methods0.
+      reflexivity.
 Qed.
 
-Lemma method_body_lookup_implies_def_lookup : forall CT C m mebody,
-  method_body_lookup CT C m = Some mebody ->
-  exists mdef, method_def_lookup CT C m = Some mdef /\ (mbody mdef) = mebody.
+Inductive MethodLookup : class_table -> class_name -> method_name -> method_def -> Prop :=
+  | ML_Found : forall CT C methods m mdef,
+      CollectMethods CT C methods ->
+      gget_method methods m = Some mdef ->
+      MethodLookup CT C m mdef.
+
+Lemma method_lookup_deterministic : forall CT C m mdef1 mdef2,
+  MethodLookup CT C m mdef1 ->
+  MethodLookup CT C m mdef2 ->
+  mdef1 = mdef2.
 Proof.
-  intros CT C m mebody H.
-  unfold method_body_lookup in H.
-  unfold method_def_lookup.
-  destruct (mdef_lookup (length CT) CT C m) as [mdef|] eqn:Hmdef.
-  - injection H as H_eq. subst mebody.
-    exists mdef.
-    split.
-    + reflexivity.
-    + reflexivity.
-  - discriminate H.
+  intros CT C m mdef1 mdef2 H1 H2.
+  inversion H1; subst.
+  inversion H2; subst.
+  (* Both use CollectMethods CT C methods *)
+  assert (methods0 = methods).
+  {
+    eapply collect_methods_deterministic; eauto.
+  }
+  subst methods0.
+  rewrite H0 in H4.
+  injection H4 as Heq.
+  exact Heq.
 Qed.
 
-Lemma method_sig_lookup_implies_body_lookup : forall CT C m msig,
-  method_sig_lookup CT C m = Some msig ->
-  exists mbody, method_body_lookup CT C m = Some mbody.
+Inductive MethodParametersBaseTypeLookup : class_table -> class_name -> method_name -> list class_name -> Prop :=
+  | ML_Params_Found : forall CT C methods m mdef mparamslist,
+      CollectMethods CT C methods ->
+      gget_method methods m = Some mdef ->
+      mparamslist = map sctype (mparams (msignature mdef)) ->
+      MethodParametersBaseTypeLookup CT C m mparamslist
+.
+
+Lemma method_parameters_base_type_lookup_deterministic : forall CT C m mparamslist1 mparamslist2,
+  MethodParametersBaseTypeLookup CT C m mparamslist1 ->
+  MethodParametersBaseTypeLookup CT C m mparamslist2 ->
+  mparamslist1 = mparamslist2.
 Proof.
-  intros CT C m msig H.
-  unfold method_sig_lookup in H.
-  unfold method_body_lookup.
-  destruct (mdef_lookup (length CT) CT C m) as [mdef|] eqn:Hmdef.
-  - injection H as H_eq. subst msig.
-    exists (mbody mdef).
-    reflexivity.
-  - discriminate H.
+  intros CT C m mparamslist1 mparamslist2 H1 H2.
+  inversion H1; subst.
+  inversion H2; subst.
+  (* Both use CollectMethods CT C methods *)
+  assert (methods0 = methods).
+  {
+    eapply collect_methods_deterministic; eauto.
+  }
+  subst methods0.
+  rewrite H0 in H4.
+  injection H4 as Heq.
+  subst mdef0.
+  reflexivity.
 Qed.
-
 
 (* STATIC WELLFORMEDNESS CONDITION *)
 (* Well-formedness of type use *)
@@ -671,17 +727,17 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       stmt_typing CT sΓ (SNew x qc C args) sΓ
 
   (* Method call *)
-  | ST_Call : forall CT sΓ x m y args argtypes Tx Ty m_sig,
+  | ST_Call : forall CT sΓ x m y args argtypes Tx Ty mdef,
                     (* sΓ0 sΓ1 mbody *)
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType sΓ y = Some Ty ->
       static_getType_list sΓ args = Some argtypes ->
-      method_sig_lookup CT (sctype Ty) m = Some m_sig ->
+      MethodLookup CT (sctype Ty) m mdef ->
       x <> 0 -> (* x is not the receiver variable *)
-      qualified_type_subtype CT (vpa_qualified_type (sqtype Ty) (mret m_sig)) Tx -> (* assignment subtype checking*)
-      qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreceiver m_sig)) -> (* receiver subtype checking *) 
-      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (sqtype Ty) T)) argtypes (mparams m_sig) -> (* argument subtype checking *)
+      qualified_type_subtype CT (vpa_qualified_type (sqtype Ty) (mret (msignature mdef))) Tx -> (* assignment subtype checking*)
+      qualified_type_subtype CT Ty (vpa_qualified_type (sqtype Ty) (mreceiver (msignature mdef))) -> (* receiver subtype checking *) 
+      Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type (sqtype Ty) T)) argtypes (mparams (msignature mdef)) -> (* argument subtype checking *)
       stmt_typing CT sΓ (SCall x m y args) sΓ
 
   (* Cast statement *)
@@ -692,10 +748,19 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
 
   (* Sequence of statements *)
   | ST_Seq : forall CT sΓ s1 sΓ' s2 sΓ'',
+      wf_senv CT sΓ ->
       stmt_typing CT sΓ s1 sΓ' ->
       stmt_typing CT sΓ' s2 sΓ'' ->
       stmt_typing CT sΓ (SSeq s1 s2) sΓ''
 .
+
+Lemma stmt_typing_wf_env : forall CT sΓ stmt sΓ',
+  stmt_typing CT sΓ stmt sΓ' ->
+  wf_senv CT sΓ.
+Proof.
+  intros CT sΓ stmt sΓ' Htyping.
+  induction Htyping; auto.
+Qed.
 
 Lemma new_stmt_args_length : forall CT sΓ x qc C args argtypes n1 consig,
   stmt_typing CT sΓ (SNew x qc C args) sΓ ->
@@ -738,7 +803,7 @@ Qed.
 Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop :=
   (* Other case: super class and this class both have fields *)
   | WFConstructorInductive: forall CT C ctor superclass_name super_fields_def this_fields_def super_bound supercons_sig,
-    parent CT C = Some superclass_name ->
+    parent_lookup CT C = Some superclass_name ->
     constructor_def_lookup CT C = Some ctor ->
     let sig := csignature ctor in
     let q_c := cqualifier sig in
@@ -762,14 +827,14 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
     (* 3. Assignment preserve subtyping *)
     let ctypes := cparams sig in 
     Forall (fun '(f1, f2) =>
-  exists mf Cf T2,
-    sf_mutability_rel CT C f1 mf /\
-    sf_base_rel CT C f1 Cf /\
-    nth_error ctypes f2 = Some T2 /\
-    qualified_type_subtype CT 
-      (vpa_qualified_type q_c (Build_qualified_type mf Cf)) 
-      (vpa_qualified_type q_c T2)
-) list_assignment ->
+    exists mf Cf T2,
+      sf_mutability_rel CT C f1 mf /\
+      sf_base_rel CT C f1 Cf /\
+      nth_error ctypes f2 = Some T2 /\
+      qualified_type_subtype CT 
+        (vpa_qualified_type q_c (Build_qualified_type mf Cf)) 
+        (vpa_qualified_type q_c T2)
+    ) list_assignment ->
     (* 4 Constructor supercall wellformed *)
     (* 4.1 Bound compatibility *)
     bound CT superclass_name = Some super_bound ->
@@ -783,7 +848,17 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
     wf_constructor CT C ctor
   .
 
-Definition find_overriding_method (CT : class_table) (C: class_name) (m: method_sig) : option method_sig :=
+Inductive FindOverridingMethod : class_table -> class_name -> method_def -> method_def -> Prop :=
+| FOM_Inherit : forall CT C mdef parent_mdef cdef parentname,
+    find_class CT C = Some cdef ->
+    super (signature cdef) = Some parentname ->
+    (* mdef is defined in C *)
+    In mdef (methods (body cdef)) ->
+    (* parent_mdef is found in parent class with same name *)
+    MethodLookup CT parentname (mname (msignature mdef)) parent_mdef ->
+    FindOverridingMethod CT C mdef parent_mdef
+.
+(* Definition find_overriding_method (CT : class_table) (C: class_name) (m: method_sig) : option method_sig :=
   match mdef_lookup (length CT) CT C (mname m) with
   | Some mdef =>
       let msig := msignature mdef in
@@ -795,52 +870,74 @@ Definition find_overriding_method (CT : class_table) (C: class_name) (m: method_
       then Some msig
       else None
   | None => None
-  end.
+  end. *)
 
 (* Well-formedness of method *)
 Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
-  (* Method is not overriding *)
-  | WFPlainMethod: forall CT C mdef mbody sΓ sΓ' mbodyrettype,
-  find_overriding_method CT C (msignature mdef) = None -> (* No overriding method *)
+| WFMethod: forall CT C mdef mbodyrettype,
   let msig := msignature mdef in
   let methodbody := mbody mdef in
   let mbodystmt := mbody_stmt methodbody in
-  sΓ = msig.(mreceiver) :: msig.(mparams) ->
-  stmt_typing CT sΓ mbodystmt sΓ' ->
-  let mbodyretvar := mreturn methodbody in
-  mbodyretvar < dom sΓ' -> (* Return variable is in the static environment after method body *)
-  nth_error sΓ' mbodyretvar = Some mbodyrettype ->
-  let methodreturntype := mret msig in
-  qualified_type_subtype CT mbodyrettype methodreturntype -> 
+  let sΓ := msig.(mreceiver) :: msig.(mparams) in
+  (exists sΓ', 
+    stmt_typing CT sΓ mbodystmt sΓ' /\
+    let mbodyretvar := mreturn methodbody in
+    mbodyretvar < dom sΓ' /\
+    nth_error sΓ' mbodyretvar = Some mbodyrettype /\
+    qualified_type_subtype CT mbodyrettype (mret msig) /\
+    (* Overriding conditions (only apply if method overrides) *)
+    (forall supermdef, FindOverridingMethod CT C mdef supermdef ->
+      let supermsig := msignature supermdef in 
+      forallb2 (fun C1 C2 => eq_class_name C1.(sctype) C2.(sctype)) (mparams msig) (mparams supermsig)
+      && eq_class_name (sctype (mret msig)) (sctype (mret supermsig)) /\
+      length (mparams msig) = length (mparams supermsig) /\
+      Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) T1) (vpa_qualified_type (sqtype (mreceiver msig)) T2)) (mparams supermsig) (mparams msig) /\
+      qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mreceiver supermsig)) (mreceiver msig) /\
+      qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mret msig)) (vpa_qualified_type (sqtype (mreceiver msig)) (mret supermsig)))) ->
+  wf_method CT C mdef
+  .
+(* Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
+  (* Method is not overriding *)
+  | WFPlainMethod: forall CT C mdef mbody mbodyrettype,
+  (forall overridden_sig, ~ FindOverridingMethod CT C (msignature mdef) overridden_sig) ->
+  let msig := msignature mdef in
+  let methodbody := mbody mdef in
+  let mbodystmt := mbody_stmt methodbody in
+  let sΓ := msig.(mreceiver) :: msig.(mparams) in
+  (exists sΓ', 
+    stmt_typing CT sΓ mbodystmt sΓ' /\
+    let mbodyretvar := mreturn methodbody in
+    mbodyretvar < dom sΓ' /\
+    nth_error sΓ' mbodyretvar = Some mbodyrettype /\
+    let methodreturntype := mret msig in
+    qualified_type_subtype CT mbodyrettype methodreturntype) ->
   wf_method CT C mdef
 
   (* Method is overrding *)
-  | WFOverridingMethod: forall CT C mdef mbody sΓ sΓ' mbodyrettype supermsig,
-  find_overriding_method CT C (msignature mdef) = Some supermsig ->
+  | WFOverridingMethod: forall CT C mdef mbody mbodyrettype supermsig,
+  FindOverridingMethod CT C (msignature mdef) supermsig ->
   let thismsig := msignature mdef in
   let this_method_return := mret thismsig in
   forallb2 (fun C1 C2 => eq_class_name C1.(sctype) C2.(sctype)) (mparams thismsig) (mparams supermsig)
   && eq_class_name (sctype (mret thismsig)) (sctype (mret supermsig)) ->
   let methodbody := mbody mdef in
   let mbodystmt := mbody_stmt methodbody in
-  sΓ = thismsig.(mreceiver) :: thismsig.(mparams) ->
-  stmt_typing CT sΓ mbodystmt sΓ' ->
-  let mbodyretvar := mreturn methodbody in
-  mbodyretvar < dom sΓ' -> (* Return variable is in the static environment after method body *)
-  nth_error sΓ' mbodyretvar = Some mbodyrettype ->
-  qualified_type_subtype CT mbodyrettype this_method_return -> 
-  let this_method_parameters := mparams thismsig in
-  let super_method_parameters := mparams supermsig in
-  length this_method_parameters = length super_method_parameters -> (* Same number of parameters *)
-  (* Check parameter type contravariant *)
-  Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) T1) (vpa_qualified_type (sqtype (mreceiver thismsig)) T2)) super_method_parameters this_method_parameters ->
-  (* Check reciever type contravariant *)
-  qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) (mreceiver supermsig)) (mreceiver thismsig) ->
-  let super_method_return := mret supermsig in
-  (* Check return type covariant *)
-  qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) this_method_return) (vpa_qualified_type (sqtype (mreceiver thismsig)) super_method_return) ->
+  let sΓ := thismsig.(mreceiver) :: thismsig.(mparams) in
+  (exists sΓ',
+    stmt_typing CT sΓ mbodystmt sΓ' /\
+    let mbodyretvar := mreturn methodbody in
+    mbodyretvar < dom sΓ' /\
+    nth_error sΓ' mbodyretvar = Some mbodyrettype /\
+    qualified_type_subtype CT mbodyrettype this_method_return /\
+    let this_method_parameters := mparams thismsig in
+    let super_method_parameters := mparams supermsig in
+    length this_method_parameters = length super_method_parameters /\
+    Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) T1) (vpa_qualified_type (sqtype (mreceiver thismsig)) T2)) super_method_parameters this_method_parameters /\
+    qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) (mreceiver supermsig)) (mreceiver thismsig) /\
+    let super_method_return := mret supermsig in
+    qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver thismsig)) this_method_return) (vpa_qualified_type (sqtype (mreceiver thismsig)) super_method_return))->
   wf_method CT C mdef
-.
+. *)
 
 (* Well-formedness of class *)
 Inductive wf_class : class_table -> class_def -> Prop :=
@@ -854,6 +951,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   cdef.(signature).(cname) = class_name ->
   wf_constructor CT class_name cdef.(body).(constructor) ->
   Forall (wf_field CT) (cdef.(body).(Syntax.fields)) -> 
+  NoDup (map (fun mdef => mname (msignature mdef)) (cdef.(body).(methods))) ->
   wf_class CT cdef
 
 (* Other object *) 
@@ -866,8 +964,9 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   let bod := cdef.(body) in
   let C := cname sig in
   let qC := class_qualifier sig in
-  wf_constructor CT C (constructor bod) /\
+  (wf_constructor CT C (constructor bod) /\
   Forall (wf_method CT C) (methods bod) /\
+  NoDup (map (fun mdef => mname (msignature mdef)) (methods bod)) /\
   match bound CT superC with
   | Some q_super => 
       exists fs, CollectFields CT C fs /\
@@ -875,8 +974,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
       Forall (wf_field CT) fs
   | None => 
       CollectFields CT C []
-  end
-  ->
+  end) ->
   wf_class CT cdef
 .
 
@@ -980,7 +1078,7 @@ Proof.
   destruct H6 as [Hwf_ctor [Hwf_methods Hbound_case]].
   destruct (bound CT superC) as [q_super|] eqn:Hbound.
   ++ (* Some q_super case *)
-    destruct Hbound_case as [fs [Hcf_fs [Hvpa Hwf_fs]]].
+    destruct Hbound_case as [mnameunique [fs [Hcf_fs [Hvpa Hwf_fs]]]].
     assert (Hfields_eq : fs = parent_fields ++ fields (body def)).
     {
       eapply collect_fields_deterministic_rel; eauto.
@@ -1000,6 +1098,7 @@ Proof.
     eapply Forall_nth_error; eauto.
   ++ (* None case *)
     exfalso.
+    destruct Hbound_case as [Hnodup Hcf_empty].
     assert (Hfields_eq : [] = parent_fields ++ fields (body def)).
     {
       eapply collect_fields_deterministic_rel; eauto.
@@ -1058,3 +1157,324 @@ Qed.
 (* Well-formedness of program  Aosen: I put it at the end because the main statement need to be well-typed*)
 (* Definition WFProgram (p: program_def) : Prop :=
   Forall (fun decl => WFClass p.(classes) decl) p.(classes) . *)
+
+Lemma find_app : forall A (f : A -> bool) l1 l2 x,
+  find f l1 = Some x ->
+  find f (l1 ++ l2) = Some x.
+Proof.
+  intros A f l1 l2 x H.
+  induction l1 as [|h t IH].
+  - (* l1 = [] *)
+    simpl in H.
+    discriminate.
+  - (* l1 = h :: t *)
+    simpl in H |- *.
+    destruct (f h) eqn:Heq.
+    + (* f h = true *)
+      injection H as Heq_x.
+      subst x.
+      reflexivity.
+    + (* f h = false *)
+      apply IH.
+      exact H.
+Qed.
+
+Lemma find_app_none : forall A (f : A -> bool) l1 l2,
+  find f l1 = None ->
+  find f (l1 ++ l2) = find f l2.
+Proof.
+  intros A f l1 l2 H.
+  induction l1 as [|h t IH].
+  - (* l1 = [] *)
+    simpl.
+    reflexivity.
+  - (* l1 = h :: t *)
+    simpl in H |- *.
+    destruct (f h) eqn:Heq.
+    + (* f h = true - contradiction *)
+      discriminate H.
+    + (* f h = false *)
+      apply IH.
+      exact H.
+Qed.
+
+Lemma find_filter_equiv : forall A (f g : A -> bool) l,
+  (forall x, In x l -> f x = true -> g x = true) ->
+  find f (filter g l) = find f l.
+Proof.
+  intros A f g l H.
+  induction l as [|h t IH].
+  - (* l = [] *)
+    simpl.
+    reflexivity.
+  - (* l = h :: t *)
+    simpl.
+    destruct (g h) eqn:Hg.
+    + (* g h = true *)
+      simpl.
+      destruct (f h) eqn:Hf.
+      * (* f h = true *)
+        reflexivity.
+      * (* f h = false *)
+        apply IH.
+        intros x Hin Hfx.
+        apply H; auto.
+        right; exact Hin.
+    + (* g h = false *)
+      destruct (f h) eqn:Hf.
+      * (* f h = true, but g h = false - contradiction with H *)
+        exfalso.
+        have Hg_true := H h (or_introl eq_refl) Hf.
+        rewrite Hg in Hg_true.
+        discriminate.
+      * (* f h = false *)
+        apply IH.
+        intros x Hin Hfx.
+        apply H; auto.
+        right; exact Hin.
+Qed.
+
+Lemma find_some_iff : forall A (f : A -> bool) l,
+  (exists x, find f l = Some x) <-> (exists x, In x l /\ f x = true).
+Proof.
+  intros A f l.
+  split.
+  - (* -> direction *)
+    intro H.
+    destruct H as [x Hfind].
+    exists x.
+    apply find_some in Hfind.
+    exact Hfind.
+  - (* <- direction *)
+    intro H.
+    destruct H as [x [Hin Hf]].
+    induction l as [|h t IH].
+    + (* l = [] *)
+      simpl in Hin.
+      contradiction.
+    + (* l = h :: t *)
+      simpl.
+      destruct (f h) eqn:Heq.
+      * (* f h = true *)
+        exists h.
+        reflexivity.
+      * (* f h = false *)
+        apply IH.
+        simpl in Hin.
+        destruct Hin as [Heq_h | Hin_t].
+        -- (* x = h *)
+           subst x.
+           rewrite Hf in Heq.
+           discriminate.
+        -- (* x in t *)
+           exact Hin_t.
+Qed.
+
+Lemma override_own_method_found : forall parent_methods own_methods m mdef,
+  gget_method own_methods m = Some mdef ->
+  gget_method (override parent_methods own_methods) m = Some mdef.
+Proof.
+  intros parent_methods own_methods m mdef Hown.
+unfold override.
+unfold gget_method.
+induction own_methods as [|h t IH].
+- (* own_methods = [] *)
+  simpl in Hown.
+  discriminate.
+- (* own_methods = h :: t *)
+  simpl.
+  destruct (eq_method_name (mname (msignature h)) m) eqn:Heq.
+  + (* Found in head *)
+    unfold gget_method in Hown.
+    simpl in Hown.
+    rewrite Heq in Hown.
+    injection Hown as Heq_mdef.
+    subst mdef.
+    reflexivity.
+  + (* Not in head, check tail *)
+  assert (Hfind_t : find (fun mdef0 => eq_method_name (mname (msignature mdef0)) m) t = Some mdef).
+  {
+    unfold gget_method in Hown.
+    simpl in Hown.
+    rewrite Heq in Hown.
+    exact Hown.
+  }
+  eapply find_app.
+  exact Hfind_t.
+Qed.
+
+Lemma override_parent_method_preserved : forall parent_methods own_methods m,
+  gget_method own_methods m = None ->
+  gget_method (override parent_methods own_methods) m = gget_method parent_methods m.
+Proof.
+  intros parent_methods own_methods m Hnone.
+  unfold override, gget_method.
+  induction own_methods as [|h t IH].
+  - (* own_methods = [] *)
+    simpl.
+    induction parent_methods as [|h t IH].
+    -- simpl. reflexivity.
+    -- simpl. 
+    destruct (eq_method_name (mname (msignature h)) m) eqn:Heq.
+    --- (* eq_method_name returns true *)
+      reflexivity.
+    --- (* eq_method_name returns false *)
+      exact IH.
+  - (* own_methods = h :: t *)
+    simpl in Hnone |- *.
+    destruct (eq_method_name (mname (msignature h)) m) eqn:Heq.
+    + (* Found in h - contradiction *)
+      discriminate Hnone.
+    + (* Not in h, continue *)
+    assert (Hfind_t_none : find (fun mdef => eq_method_name (mname (msignature mdef)) m) t = None).
+    {
+      unfold gget_method in Hnone.
+      exact Hnone.
+    }
+    rewrite find_app_none.
+    -- (* Show find on t returns None *)
+      exact Hfind_t_none.
+    -- (* Show filters are equivalent *)
+      apply find_filter_equiv.
+      intro pmdef.
+      intro Hin.
+      rewrite Bool.negb_orb.
+      rewrite Bool.andb_true_iff.
+      split.
+    --- (* Show ~~eq_method_name(pmdef, h) = true *)
+      rewrite Bool.negb_true_iff.
+      assert (Hneq : mname (msignature pmdef) <> mname (msignature h)).
+      {
+        intro Heq_names.
+        rewrite Heq_names in H.
+        rewrite H in Heq.
+        discriminate.
+      }
+      destruct (eq_method_name (mname (msignature pmdef)) (mname (msignature h))) eqn:Heq_pmdef_h.
+      +++ (* eq_method_name returns true - contradiction *)
+        exfalso.
+        apply Hneq.
+        apply Nat.eqb_eq in Heq_pmdef_h.
+        exact Heq_pmdef_h.
+      +++ (* eq_method_name returns false - this is what we want *)
+        reflexivity.
+    --- (* Show ~~existsb(...) = true *)
+      rewrite Bool.negb_true_iff.
+      destruct (existsb (fun omdef => eq_method_name (mname (msignature pmdef)) (mname (msignature omdef))) t) eqn:Hexistsb.
+      +++ (* existsb returns true - contradiction *)
+        exfalso.
+        apply existsb_exists in Hexistsb.
+        destruct Hexistsb as [omdef [Hin_t Heq_names]].
+        (* pmdef matches m, and omdef has same name as pmdef, so omdef matches m *)
+        assert (Homdef_m : eq_method_name (mname (msignature omdef)) m = true).
+        {
+          apply Nat.eqb_eq in H.
+          apply Nat.eqb_eq in Heq_names.
+          rewrite <- Heq_names.
+          apply Nat.eqb_eq.
+          exact H.
+        }
+        (* This contradicts that find on t returns None *)
+        unfold gget_method in Hnone.
+        assert (Hcontra : find (fun mdef => eq_method_name (mname (msignature mdef)) m) t <> None).
+        {
+          assert (Hfind_exists : exists x, find (fun mdef => eq_method_name (mname (msignature mdef)) m) t = Some x).
+          {
+            apply find_some_iff.
+            exists omdef.
+            split; [exact Hin_t | exact Homdef_m].
+          }
+          intro Hcontra.
+          destruct Hfind_exists as [x Hfind_x].
+          rewrite Hfind_x in Hcontra.
+          discriminate.
+        }
+        rewrite Hfind_t_none in Hcontra.
+        apply Hcontra.
+        reflexivity.
+      +++ (* existsb returns false - this is what we want *)
+        reflexivity.
+Qed.
+
+Lemma override_preserves_param_count : forall CT C parent_methods own_methods m mdef mdef',
+  wf_class_table CT ->
+  CollectMethods CT C (override parent_methods own_methods) ->
+  gget_method own_methods m = Some mdef ->
+  gget_method (override parent_methods own_methods) m = Some mdef' ->
+  dom (mparams (msignature mdef)) = dom (mparams (msignature mdef')).
+Proof.
+  intros CT C parent_methods own_methods m mdef mdef' Hwf_ct Hcollect Hown Hoverride.
+  have Hfound := override_own_method_found parent_methods own_methods m mdef Hown.
+  rewrite Hfound in Hoverride.
+  injection Hoverride as Heq.
+  subst mdef'.
+  reflexivity.
+Qed.
+
+Lemma method_lookup_in_local_methods : forall CT C mdef m,
+  MethodLookup CT C m mdef ->
+  exists def, find_class CT C = Some def /\
+    (In mdef (methods (body def)) \/
+     exists parent_methods, 
+       CollectMethods CT C (override parent_methods (methods (body def))) /\
+       In mdef (override parent_methods (methods (body def)))).
+Proof.
+  intros CT C mdef m Hlookup.
+  inversion Hlookup; subst.
+  inversion H; subst.
+  - (* CM_NotFound *)
+    exfalso.
+    unfold gget_method in H0.
+    discriminate.
+  - (* CM_Object *)
+    exists def.
+    split.
+    -- exact H1.
+    -- left.
+      unfold gget_method in H0.
+      eapply find_some in H0.
+      destruct H0 as [Hin _].
+      exact Hin.
+  - (* CM_Inherit *)
+    exists def.
+    split.
+    -- exact H1.
+    -- right.
+      exists parent_methods.
+      split.
+      + exact H.
+      + unfold gget_method in H0.
+        eapply find_some in H0.
+        destruct H0 as [Hin _].
+        exact Hin.
+Qed.
+
+
+Lemma find_overriding_method_deterministic : forall CT C msig1 msig2 msig3,
+  wf_class_table CT ->
+  C < dom CT ->
+  FindOverridingMethod CT C msig1 msig2 ->
+  FindOverridingMethod CT C msig1 msig3 ->
+  msig2 = msig3.
+Proof.
+  intros CT C msig1 msig2 msig3 Hwf_ct Hdom H1 H2.
+  generalize dependent msig3.
+  induction H1; intros.
+  inversion H3; subst.
+  assert (Heq_cdef : cdef = cdef0).
+  {
+    rewrite H in H4.
+    injection H4 as Heq.
+    exact Heq.
+  }
+  subst cdef0.
+  assert (Heq_parent : parentname = parentname0).
+  {
+    rewrite H0 in H5.
+    injection H5 as Heq.
+    exact Heq.
+  }
+  subst parentname0.
+  eapply method_lookup_deterministic; eauto.
+Qed.
+ 
