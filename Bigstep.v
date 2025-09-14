@@ -867,20 +867,25 @@ Lemma runtime_preserves_r_type_heap : forall CT rΓ h loc C h' vals s rΓ',
   eval_stmt OK CT rΓ h s OK rΓ' h' ->
   exists vals', runtime_getObj h' loc = Some {| rt_type := C; fields_map := vals' |}.
 Proof.
-  intros. remember OK as ok. induction H0; subst; try discriminate.
+  intros. remember OK as ok. generalize dependent vals. 
+  induction H0; intros; subst; try discriminate.
   1-3: exists vals; assumption.
   - (* SBS_FldWrite *)
     destruct (Nat.eq_dec loc lx).
-    + subst lx. rewrite H1 in H. inversion H; subst.
+    + subst lx. rewrite H0 in H4. inversion H4; subst.
       exists (update f v2 vals). unfold runtime_getObj.
-      unfold update_field. rewrite H1. simpl.
-      rewrite update_hit; auto. apply runtime_getObj_dom in H1; auto.
-    + exists vals.
-      admit.
+      unfold update_field. rewrite H0. simpl.
+      rewrite update_same; auto. apply runtime_getObj_dom in H0; auto.
+    + exists vals. unfold runtime_getObj. unfold update_field. rewrite H0.
+      rewrite update_diff; auto.
   - (* SBS_New *)
-    exists vals.
-    unfold runtime_getObj.
-Admitted.
+    exists vals0. apply runtime_getObj_dom in H7 as Heq. rewrite runtime_getObj_last2; auto.
+  - (* SBS_Call *)
+    apply IHeval_stmt in H9; auto. 
+  - (* SBS_Seq *)
+    apply IHeval_stmt1 in H; auto. destruct H as [vals' Hget].
+    eapply IHeval_stmt2; eauto. 
+Qed.
 
 Lemma Forall2_length : forall {A B} (P : A -> B -> Prop) l1 l2,
   Forall2 P l1 l2 ->
