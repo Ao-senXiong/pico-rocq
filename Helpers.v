@@ -990,3 +990,28 @@ Proof.
       simpl in Ha, Hb.
       eapply IHForall2; eauto.
 Qed.
+
+Lemma Forall2_update : forall A B (P : A -> B -> Prop) (la : list A) (lb : list B) f a,
+  Forall2 P la lb ->
+  f < length lb ->
+  (forall b, nth_error lb f = Some b -> P a b) ->
+  Forall2 P (update f a la) lb.
+Proof.
+  intros A B P la lb f a H_forall2 H_bound H_prop.
+  generalize dependent f.
+  induction H_forall2; intros f H_bound H_prop.
+  - (* Empty lists *)
+    simpl in H_bound. lia.
+  - (* Non-empty lists *)
+    destruct f as [|f'].
+    + (* f = 0 *)
+      simpl. constructor.
+      * apply H_prop. simpl. reflexivity.
+      * exact H_forall2.
+    + (* f = S f' *)
+      simpl. constructor.
+      * exact H.
+      * apply IHH_forall2.
+        -- simpl in H_bound. lia.
+        -- intros b Hnth. apply H_prop. simpl. exact Hnth.
+Qed.

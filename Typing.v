@@ -611,6 +611,83 @@ Proof.
   reflexivity.
 Qed.
 
+Inductive MethodReceiverBaseTypeLookup : class_table -> class_name -> method_name -> class_name -> Prop :=
+  | ML_Receiver_Found : forall CT C methods m mdef receivertype,
+      CollectMethods CT C methods ->
+      gget_method methods m = Some mdef ->
+      receivertype = sctype (mreceiver (msignature mdef)) ->
+      MethodReceiverBaseTypeLookup CT C m receivertype
+.
+
+Inductive MethodReturnBaseTypeLookup : class_table -> class_name -> method_name -> class_name -> Prop :=
+  | ML_Return_Found : forall CT C methods m mdef returntype,
+      CollectMethods CT C methods ->
+      gget_method methods m = Some mdef ->
+      returntype = sctype (mret (msignature mdef)) ->
+      MethodReturnBaseTypeLookup CT C m returntype
+.
+
+Lemma method_receiver_base_type_lookup_deterministic : forall CT C m receivertype1 receivertype2,
+  MethodReceiverBaseTypeLookup CT C m receivertype1 ->
+  MethodReceiverBaseTypeLookup CT C m receivertype2 ->
+  receivertype1 = receivertype2.
+Proof.
+  intros CT C m receivertype1 receivertype2 H1 H2.
+  inversion H1; subst.
+  inversion H2; subst.
+  assert (methods0 = methods).
+  {
+    eapply collect_methods_deterministic; eauto.
+  }
+  subst methods0.
+  rewrite H0 in H4.
+  injection H4 as Heq.
+  subst mdef0.
+  reflexivity.
+Qed.
+
+Lemma method_return_base_type_lookup_deterministic : forall CT C m returntype1 returntype2,
+  MethodReturnBaseTypeLookup CT C m returntype1 ->
+  MethodReturnBaseTypeLookup CT C m returntype2 ->
+  returntype1 = returntype2.
+Proof.
+  intros CT C m returntype1 returntype2 H1 H2.
+  inversion H1; subst.
+  inversion H2; subst.
+  assert (methods0 = methods).
+  {
+    eapply collect_methods_deterministic; eauto.
+  }
+  subst methods0.
+  rewrite H0 in H4.
+  injection H4 as Heq.
+  subst mdef0.
+  reflexivity.
+Qed.
+
+Lemma method_params_base_type_length : forall CT C m param_types mdef,
+  MethodLookup CT C m mdef ->
+  MethodParametersBaseTypeLookup CT C m param_types ->
+  length param_types = length (mparams (msignature mdef)).
+Proof.
+  intros CT C m param_types mdef Hlookup Hbase_lookup.
+  inversion Hbase_lookup; subst.
+  (* We have MethodLookup CT C m mdef and gget_method methods m = Some mdef0 *)
+  (* First establish that mdef = mdef0 *)
+  assert (Hlookup_mdef0 : MethodLookup CT C m mdef0).
+  {
+    econstructor; eauto.
+  }
+  assert (Heq : mdef = mdef0).
+  {
+    eapply method_lookup_deterministic; eauto.
+  }
+  subst mdef0.
+  (* Now param_types = map sctype (mparams (msignature mdef)) *)
+  rewrite length_map.
+  reflexivity.
+Qed.
+
 (* STATIC WELLFORMEDNESS CONDITION *)
 (* Well-formedness of type use *)
 Definition wf_stypeuse (CT : class_table) (q1: q) (c: class_name) : Prop :=
@@ -849,53 +926,50 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
   .
 
 Inductive FindOverridingMethod : class_table -> class_name -> method_def -> method_def -> Prop :=
-| FOM_Inherit : forall CT C mdef parent_mdef cdef parentname,
-    find_class CT C = Some cdef ->
-    super (signature cdef) = Some parentname ->
-    (* mdef is defined in C *)
-    In mdef (methods (body cdef)) ->
-    (* parent_mdef is found in parent class with same name *)
-    MethodLookup CT parentname (mname (msignature mdef)) parent_mdef ->
-    FindOverridingMethod CT C mdef parent_mdef
-.
-(* Definition find_overriding_method (CT : class_table) (C: class_name) (m: method_sig) : option method_sig :=
-  match mdef_lookup (length CT) CT C (mname m) with
-  | Some mdef =>
-      let msig := msignature mdef in
-      if eq_method_name (mname msig) (mname m)
-         (* && forallb2 (fun C1 C2 =>
-          eq_class_name C1.(sctype) C2.(sctype)
-         ) (mparams msig) (mparams m)
-         && eq_class_name (sctype (mret msig)) (sctype (mret m)) *)
-      then Some msig
-      else None
-  | None => None
-  end. *)
+  | FOM_Inherit : forall CT C mdef parent_mdef cdef parentname 
+                        param_types return_type
+                        parent_param_types parent_return_type,
+      find_class CT C = Some cdef ->
+      super (signature cdef) = Some parentname ->
+      (* mdef is defined in C *)
+      In mdef (methods (body cdef)) ->
+      (* parent_mdef is found in parent class with same name *)
+      MethodLookup CT parentname (mname (msignature mdef)) parent_mdef ->
+      (* Extract base types from both methods *)
+      MethodParametersBaseTypeLookup CT C (mname (msignature mdef)) param_types ->
+      MethodReturnBaseTypeLookup CT C (mname (msignature mdef)) return_type ->
+      MethodParametersBaseTypeLookup CT parentname (mname (msignature mdef)) parent_param_types ->
+      MethodReturnBaseTypeLookup CT parentname (mname (msignature mdef)) parent_return_type ->
+      (* Base type compatibility constraints *)
+      param_types = parent_param_types ->
+      return_type = parent_return_type ->
+      FindOverridingMethod CT C mdef parent_mdef
+  .
 
 (* Well-formedness of method *)
 Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
-| WFMethod: forall CT C mdef mbodyrettype,
-  let msig := msignature mdef in
-  let methodbody := mbody mdef in
-  let mbodystmt := mbody_stmt methodbody in
-  let sΓ := msig.(mreceiver) :: msig.(mparams) in
-  (exists sΓ', 
-    stmt_typing CT sΓ mbodystmt sΓ' /\
-    let mbodyretvar := mreturn methodbody in
-    mbodyretvar < dom sΓ' /\
-    nth_error sΓ' mbodyretvar = Some mbodyrettype /\
-    qualified_type_subtype CT mbodyrettype (mret msig) /\
-    (* Overriding conditions (only apply if method overrides) *)
-    (forall supermdef, FindOverridingMethod CT C mdef supermdef ->
-      let supermsig := msignature supermdef in 
-      forallb2 (fun C1 C2 => eq_class_name C1.(sctype) C2.(sctype)) (mparams msig) (mparams supermsig)
-      && eq_class_name (sctype (mret msig)) (sctype (mret supermsig)) /\
-      length (mparams msig) = length (mparams supermsig) /\
-      Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) T1) (vpa_qualified_type (sqtype (mreceiver msig)) T2)) (mparams supermsig) (mparams msig) /\
-      qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mreceiver supermsig)) (mreceiver msig) /\
-      qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mret msig)) (vpa_qualified_type (sqtype (mreceiver msig)) (mret supermsig)))) ->
-  wf_method CT C mdef
-  .
+  | WFMethod: forall CT C mdef mbodyrettype,
+    let msig := msignature mdef in
+    let methodbody := mbody mdef in
+    let mbodystmt := mbody_stmt methodbody in
+    let sΓ := msig.(mreceiver) :: msig.(mparams) in
+    (exists sΓ', 
+      stmt_typing CT sΓ mbodystmt sΓ' /\
+      let mbodyretvar := mreturn methodbody in
+      mbodyretvar < dom sΓ' /\
+      nth_error sΓ' mbodyretvar = Some mbodyrettype /\
+      qualified_type_subtype CT mbodyrettype (mret msig) /\
+      (* Overriding conditions (only apply if method overrides) *)
+      (forall supermdef, FindOverridingMethod CT C mdef supermdef ->
+        let supermsig := msignature supermdef in 
+        (* forallb2 (fun C1 C2 => eq_class_name C1.(sctype) C2.(sctype)) (mparams msig) (mparams supermsig)
+        && eq_class_name (sctype (mret msig)) (sctype (mret supermsig)) /\
+        length (mparams msig) = length (mparams supermsig) /\ *)
+        Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) T1) (vpa_qualified_type (sqtype (mreceiver msig)) T2)) (mparams supermsig) (mparams msig) /\
+        qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mreceiver supermsig)) (mreceiver msig) /\
+        qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mret msig)) (vpa_qualified_type (sqtype (mreceiver msig)) (mret supermsig)))) ->
+    wf_method CT C mdef
+    .
 (* Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
   (* Method is not overriding *)
   | WFPlainMethod: forall CT C mdef mbody mbodyrettype,
@@ -1460,18 +1534,18 @@ Proof.
   intros CT C msig1 msig2 msig3 Hwf_ct Hdom H1 H2.
   generalize dependent msig3.
   induction H1; intros.
-  inversion H3; subst.
+  inversion H9; subst.
   assert (Heq_cdef : cdef = cdef0).
   {
-    rewrite H in H4.
-    injection H4 as Heq.
+    rewrite H in H10.
+    injection H10 as Heq.
     exact Heq.
   }
   subst cdef0.
   assert (Heq_parent : parentname = parentname0).
   {
-    rewrite H0 in H5.
-    injection H5 as Heq.
+    rewrite H0 in H11.
+    injection H11 as Heq.
     exact Heq.
   }
   subst parentname0.
