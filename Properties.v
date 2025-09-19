@@ -183,124 +183,141 @@ Proof.
         exact Hin_t.
 Qed.
 
-Lemma method_lookup_wf_class: forall CT C m mdef,
+Lemma method_body_well_typed : forall CT C cdef mdef,
   wf_class_table CT ->
   C < dom CT ->
-  MethodLookup CT C m mdef ->
-  wf_method CT C mdef.
+  find_class CT C = Some cdef ->
+  In mdef (methods (body cdef)) ->
+  exists sΓ', stmt_typing CT (mreceiver (msignature mdef) :: mparams (msignature mdef)) 
+                           (mbody_stmt (mbody mdef)) 
+                           sΓ'.
 Proof.
-  intros CT C m mdef Hwf_ct Hdom Hlookup.
-  (* Use strong induction on C *)
-  induction C as [C IH] using lt_wf_ind.
-  assert (Hexists_class : exists class_def, find_class CT C = Some class_def).
-  {
-    apply find_class_Some.
-    exact Hdom.
-  }
-  destruct Hexists_class as [class_def Hfind_class].
-  assert (Hwf_class : wf_class CT class_def).
+  intros CT C cdef mdef Hwf_ct Hdom HfindC Hlookup.
+  assert (Hwf_class : wf_class CT cdef).
   {
     unfold wf_class_table in Hwf_ct.
     destruct Hwf_ct as [Hforall_wf _].
     eapply Forall_nth_error; eauto.
   }
-  inversion Hlookup; subst.
-  inversion H; subst.
-  - (* CM_Object case *)
-    exfalso.
-    (* gget_method [] m = Some mdef is impossible *)
-    unfold gget_method in H0.
-    simpl in H0.
-    discriminate.
-  - (* CM_Inherit case *)
-    assert (Heq : class_def = def).
+  assert (Hcname_eq : cname (signature cdef) = C).
   {
-    rewrite Hfind_class in H1.
-    injection H1 as Heq.
-    exact Heq.
+    unfold wf_class_table in Hwf_ct.
+    destruct Hwf_ct as [_ [_ Hcname_consistent]].
+    destruct Hcname_consistent as [_ Hcname_eq].
+    apply Hcname_eq.
+    exact HfindC.
   }
-  subst def.
-  inversion Hwf_class; subst.
-  + (* WFObjectDef *)
-    exfalso.
-    (* Contradiction: methods list is empty but we found a method *)
-    rewrite H7 in H0.
-    unfold gget_method in H0.
-    simpl in H0.
-    discriminate.
-  + (* WFOtherDef - contradiction *)
-    exfalso.
-    rewrite H2 in H5.
-    discriminate.
-  - (* CM_Inherit case *)
-    assert (Heq : class_def = def).
-    {
-      rewrite Hfind_class in H1.
-      injection H1 as Heq.
-      exact Heq.
-    }
-    subst def.
-    inversion Hwf_class; subst.
-    + (* WFObjectDef - contradiction *)
-      exfalso.
-      rewrite H2 in H7.
-      discriminate.
-    + (* WFOtherDef *)
-    destruct (gget_method (methods (body class_def)) m) as [local_mdef|] eqn:Hlocal.
-    * assert (Hlocal_eq : local_mdef = mdef).
-    {
-      unfold gget_method in H0.
-      unfold override in H0.
-      erewrite find_app in H0; eauto.
-      injection H0 as Heq.
-      exact Heq.
-    }
-    subst local_mdef.
-    destruct H11 as [_ [Hforall_methods _]].
-    unfold gget_method in Hlocal.
-    apply find_some in Hlocal.
-    destruct Hlocal as [Hin _].
-    apply In_nth_error in Hin.
-    destruct Hin as [n Hnth].
-    assert (Hwf_mdef_local : wf_method CT C0 mdef).
-    {
-      eapply Forall_nth_error with (l := methods (body class_def)) (n := n); eauto.
-    }
-    (* Now convert from C0 to C *)
-    assert (HC0_eq : C0 = C).
-    {
-      unfold C0.
-      unfold wf_class_table in Hwf_ct.
-      destruct Hwf_ct as [_ [_ [_ Hcname_consistent]]].
-      apply Hcname_consistent.
-      exact Hfind_class.
-    }
-    rewrite HC0_eq in Hwf_mdef_local.
-    exact Hwf_mdef_local.
+  assert (Hwf_mdef : wf_method CT C mdef).
+  {
+    eapply method_lookup_wf_class; eauto.
+  }
+  inversion Hwf_mdef; subst.
+  destruct H as [sΓ' [Htyping _]].
+  exists sΓ'.
+  unfold sΓ, msig in Htyping.
+  unfold methodbody, mbodystmt in Htyping.
+  exact Htyping.
+Qed.
 
-   *
-   (* mdef found in parent methods *)
-    assert (Hparent_in : In mdef parent_methods /\ 
-                        eq_method_name (mname (msignature mdef)) m = true).
-    {
-      eapply override_parent_method_in; eauto.
-    }
-    destruct Hparent_in as [Hin_parent Heq_name].
 
-    (* Use IH on parent class *)
-    assert (Hparent_lookup_exists : exists mdef_parent, MethodLookup CT parent m mdef_parent).
-    {
-      destruct (gget_method_from_in parent_methods m mdef Hin_parent Heq_name) as [mdef' [Hget _]].
-      exists mdef'.
-      apply ML_Found with parent_methods; auto.
-    }
-   admit.
-Admitted.
-
-Lemma method_body_well_typed : forall CT C m mdef,
+(* Lemma method_lookup_in_wellformed_inherited: forall CT C m mdef,
   wf_class_table CT ->
   C < dom CT ->
-  MethodLookup CT C m mdef ->
+  FindMethodWithName CT C m mdef ->
+  (exists D ddef, base_subtype CT C D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
+Proof.
+  intros CT C m mdef Hwf_ct Hdom Hlookup.
+  induction C as [C IH] using lt_wf_ind.
+  inversion Hlookup; subst.
+  inversion H; subst.
+  - (* CM_NotFound case *)
+    exfalso.
+    unfold gget_method in H0.
+    discriminate.
+  - (* CM_Object case *)
+    exists C, def.
+    split; [apply base_refl; exact H3 | split; [exact H1 | split]].
+    + unfold gget_method in H0.
+      apply find_some in H0.
+      destruct H0 as [Hin _].
+      exact Hin.
+    + eapply method_lookup_wf_class; eauto.
+      unfold gget_method in H0.
+      apply find_some in H0.
+      destruct H0 as [Hin _].
+      exact Hin.
+  - (* CM_Inherit case *)
+    destruct (gget_method (methods (body def)) m) as [local_mdef|] eqn:Hlocal.
+    + (* Method found locally *)
+      assert (Hlocal_eq : local_mdef = mdef).
+      {
+        assert (Hoverride_local : gget_method (override parent_methods (methods (body def))) m = Some local_mdef).
+        {
+          apply override_own_method_found.
+          exact Hlocal.
+        }
+        rewrite Hoverride_local in H0.
+        injection H0 as Heq.
+        exact Heq.
+      }
+      subst local_mdef.
+      exists C, def.
+      split; [apply base_refl; exact H3 | split; [exact H1 | split]].
+      * unfold gget_method in Hlocal.
+        apply find_some in Hlocal.
+        destruct Hlocal as [Hin _].
+        exact Hin.
+      * eapply method_lookup_wf_class; eauto.
+        unfold gget_method in Hlocal.
+        apply find_some in Hlocal.
+        destruct Hlocal as [Hin _].
+        exact Hin.
+    + (* Method inherited from parent *)
+      assert (Hparent_mdef : FindMethodWithName CT parent m mdef).
+      {
+        apply ML_Found with parent_methods; auto.
+        erewrite override_parent_method_preserved in H0; eauto.
+      }
+      assert (Hparent_lt : parent < C).
+      {
+        assert (Hwf_class : wf_class CT def).
+        {
+          unfold wf_class_table in Hwf_ct.
+          destruct Hwf_ct as [Hforall_wf _].
+          eapply Forall_nth_error; eauto.
+        }
+        inversion Hwf_class; subst.
+        - (* WFObjectDef - contradiction *)
+          rewrite H7 in H2.
+          discriminate.
+        - (* WFOtherDef *)
+          assert (Hcname_eq : cname (signature def) = C).
+          {
+            unfold wf_class_table in Hwf_ct.
+            destruct Hwf_ct as [_ [_ [_ Hcname_consistent]]].
+            apply Hcname_consistent.
+            exact H1.
+          }
+          rewrite H8 in H2.
+          injection H2 as Heq.
+          subst superC.
+          rewrite Hcname_eq in H10.
+          exact H10.
+      }
+      apply IH in Hparent_mdef; auto.
+      destruct Hparent_mdef as [D [ddef [Hsub [Hfind_D [Hin_D Hwf_D]]]]].
+      exists D, ddef.
+      split; [eapply base_trans; eauto | split; [exact Hfind_D | split; [exact Hin_D | exact Hwf_D]]].
+      eapply base_extends; eauto.
+      unfold parent_lookup.
+      rewrite H1.
+      exact H2.
+Qed. *)
+
+Lemma method_body_well_typed_dispatch : forall CT C m mdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  FindMethodWithName CT C m mdef ->
   exists sΓ', stmt_typing CT (mreceiver (msignature mdef) :: mparams (msignature mdef)) 
                            (mbody_stmt (mbody mdef)) 
                            sΓ'.
@@ -326,11 +343,15 @@ Proof.
     apply Hcname_eq.
     exact Hfind_class.
   }
-  assert (Hwf_mdef : wf_method CT C mdef).
+
+  assert (Hwf_inherited : exists D ddef, base_subtype CT C D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
   {
-    eapply method_lookup_wf_class; eauto.
+    eapply method_lookup_in_wellformed_inherited; eauto.
   }
-  inversion Hwf_mdef; subst.
+  destruct Hwf_inherited as [D [ddef [Hsub [Hfind_D [Hin_D Hwf_D]]]]].
+
+  (* Extract the statement typing from wf_method *)
+  inversion Hwf_D; subst.
   destruct H as [sΓ' [Htyping _]].
   exists sΓ'.
   unfold sΓ, msig in Htyping.
@@ -354,87 +375,100 @@ Proof.
   inversion Hwf_env; subst.
   split.
   - (* Receiver well-formedness *)
-    apply Forall_inv in H0.
-    exact H0.
+    apply Forall_inv in H1.
+    exact H1.
   - (* Parameters well-formedness *)
-    apply Forall_inv_tail in H0.
-    exact H0.
+    apply Forall_inv_tail in H1.
+    exact H1.
 Qed.
 
-Lemma method_sig_wf_reciever : forall CT C m mdef,
+Lemma method_sig_wf_reciever : forall CT C cdef mdef,
   wf_class_table CT ->
   C < dom CT ->
-  (* This lookup is too strong. *)
-  MethodLookup CT C m mdef ->
+  find_class CT C = Some cdef ->
+  In mdef (methods (body cdef)) ->
   wf_stypeuse CT (sqtype (mreceiver (msignature mdef))) (sctype (mreceiver (msignature mdef))).
 Proof.
-  intros CT C m mdef Hwf_ct Hdom Hlookup.
-  assert (Hexists_class : exists class_def, find_class CT C = Some class_def).
-  {
-    apply find_class_Some.
-    exact Hdom.
-  }
-  destruct Hexists_class as [class_def Hfind_class].
-  assert (Hwf_class : wf_class CT class_def).
+  intros CT C cdef mdef Hwf_ct Hdom HfindC Hlookup.
+  assert (Hwf_class : wf_class CT cdef).
   {
     unfold wf_class_table in Hwf_ct.
     destruct Hwf_ct as [Hforall_wf _].
     eapply Forall_nth_error; eauto.
   }
-  assert (Hcname_eq : cname (signature class_def) = C).
+  assert (Hcname_eq : cname (signature cdef) = C).
   {
     unfold wf_class_table in Hwf_ct.
     destruct Hwf_ct as [_ [_ Hcname_consistent]].
     destruct Hcname_consistent as [_ Hcname_eq].
     apply Hcname_eq.
-    exact Hfind_class.
+    exact HfindC.
   }
-  rewrite <- Hcname_eq in Hlookup.
   assert (Hwf_mdef : wf_method CT C mdef).
   {
     eapply method_lookup_wf_class; eauto.
-    rewrite Hcname_eq in Hlookup.
-    exact Hlookup.
   }
 
   eapply wf_method_sig_types; eauto.
 Qed.
 
-Lemma method_sig_wf_parameters : forall CT C m mdef,
+Lemma method_sig_wf_parameters : forall CT C cdef mdef,
   wf_class_table CT ->
   C < dom CT ->
-  MethodLookup CT C m mdef ->
+  find_class CT C = Some cdef ->
+  In mdef (methods (body cdef)) ->
   Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (mparams (msignature mdef)).
 Proof.
-  intros CT C m mdef Hwf_ct Hdom Hlookup.
-  assert (Hexists_class : exists class_def, find_class CT C = Some class_def).
-  {
-    apply find_class_Some.
-    exact Hdom.
-  }
-  destruct Hexists_class as [class_def Hfind_class].
-  assert (Hwf_class : wf_class CT class_def).
+  intros CT C cdef mdef Hwf_ct Hdom HfindC Hlookup.
+  assert (Hwf_class : wf_class CT cdef).
   {
     unfold wf_class_table in Hwf_ct.
     destruct Hwf_ct as [Hforall_wf _].
     eapply Forall_nth_error; eauto.
   }
-  assert (Hcname_eq : cname (signature class_def) = C).
+  assert (Hcname_eq : cname (signature cdef) = C).
   {
     unfold wf_class_table in Hwf_ct.
     destruct Hwf_ct as [_ [_ Hcname_consistent]].
     destruct Hcname_consistent as [_ Hcname_eq].
     apply Hcname_eq.
-    exact Hfind_class.
+    exact HfindC.
   }
-  rewrite <- Hcname_eq in Hlookup.
   assert (Hwf_mdef : wf_method CT C mdef).
   {
     eapply method_lookup_wf_class; eauto.
-    rewrite Hcname_eq in Hlookup.
-    exact Hlookup.
   }
 
+  eapply wf_method_sig_types; eauto.
+Qed.
+
+Lemma method_sig_wf_receiver_dispatch : forall CT C m mdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  FindMethodWithName CT C m mdef ->
+  wf_stypeuse CT (sqtype (mreceiver (msignature mdef))) (sctype (mreceiver (msignature mdef))).
+Proof.
+  intros CT C m mdef Hwf_ct Hdom Hlookup.
+  assert (Hwf_inherited : exists D ddef, base_subtype CT C D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
+  {
+    eapply method_lookup_in_wellformed_inherited; eauto.
+  }
+  destruct Hwf_inherited as [D [ddef [Hsub [Hfind_D [Hin_D Hwf_D]]]]].
+  eapply wf_method_sig_types; eauto.
+Qed.
+
+Lemma method_sig_wf_parameters_dispatch : forall CT C m mdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  FindMethodWithName CT C m mdef ->
+  Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (mparams (msignature mdef)).
+Proof.
+  intros CT C m mdef Hwf_ct Hdom Hlookup.
+  assert (Hwf_inherited : exists D ddef, base_subtype CT C D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
+  {
+    eapply method_lookup_in_wellformed_inherited; eauto.
+  }
+  destruct Hwf_inherited as [D [ddef [Hsub [Hfind_D [Hin_D Hwf_D]]]]].
   eapply wf_method_sig_types; eauto.
 Qed.
 
@@ -447,120 +481,6 @@ Proof.
   unfold gget_method.
   apply find_app.
   exact Hown.
-Qed.
-
-Lemma method_exists_in_subtype : forall CT C D m mdef,
-  wf_class_table CT ->
-  base_subtype CT C D ->
-  MethodLookup CT D m mdef ->
-  exists mdef', MethodLookup CT C m mdef'.
-Proof.
-  intros CT C D m mdef hwf Hsubtype Hlookup_D.
-  generalize dependent mdef.
-  induction Hsubtype; intros mdef Hlookup_D.
-  - (* Base case: C = D *)
-    exists mdef.
-    exact Hlookup_D.
-  - (* Inductive case: C <: E <: D *)
-    (* First get some method from D using IHHsubtype2 *)
-    destruct (IHHsubtype2 hwf mdef Hlookup_D) as [mdef_D Hlookup_mdef_D].
-    (* Then get some method from C using IHHsubtype1 *)
-    destruct (IHHsubtype1 hwf mdef_D Hlookup_mdef_D) as [mdef_C Hlookup_mdef_C].
-    exists mdef_C.
-    exact Hlookup_mdef_C.
-  - (* Get class definition for C *)
-    assert (Hexists_class_C : exists class_def_C, find_class CT C = Some class_def_C).
-    {
-      apply find_class_Some.
-      exact H.
-    }
-    destruct Hexists_class_C as [class_def_C Hfind_C].
-
-    (* Check if method is defined locally in C *)
-    destruct (gget_method (methods (body class_def_C)) m) as [local_mdef|] eqn:Hlocal.
-    -- (* Method found locally in C *)
-      exists local_mdef.
-      inversion Hlookup_D; subst.
-      rename methods into dmethods.
-      apply ML_Found with (override dmethods (methods (body class_def_C))).
-      + (* Prove CollectMethods for object class case *)
-        assert (Hsuper_eq : super (signature class_def_C) = Some D).
-        {
-          unfold parent_lookup in H1.
-          rewrite Hfind_C in H1.
-          exact H1.
-        }
-        eapply CM_Inherit; eauto.
-        * (* C > D - from well-formed class table ordering *)
-          {
-          assert (Hwf_class_C : wf_class CT class_def_C).
-          {
-            unfold wf_class_table in hwf.
-            destruct hwf as [Hforall_wf _].
-            eapply Forall_nth_error; eauto.
-          }
-          inversion Hwf_class_C; subst.
-          - (* WFObjectDef case - contradiction since C has a parent *)
-            rewrite H4 in Hsuper_eq.
-            discriminate.
-          - (* WFOtherDef case *)
-            assert (Hcname_eq : cname (signature class_def_C) = C).
-            {
-              unfold wf_class_table in hwf.
-              destruct hwf as [_ [_ [_ Hcname_consistent]]].
-              apply Hcname_consistent.
-              exact Hfind_C.
-            }
-            rewrite Hcname_eq.
-            rewrite H5 in Hsuper_eq.
-            injection Hsuper_eq as Heq.
-            subst superC.
-            rewrite Hcname_eq in H7.
-            exact H7.
-        }
-      + 
-      apply override_own_method_found.
-      exact Hlocal.
-    -- (* Method not found locally, inherit from parent *)
-      inversion Hlookup_D; subst.
-      exists mdef.
-      rename methods into dmethods.
-      apply ML_Found with (override dmethods (methods (body class_def_C))).
-      + assert (Hsuper_eq : super (signature class_def_C) = Some D).
-        {
-          unfold parent_lookup in H1.
-          rewrite Hfind_C in H1.
-          exact H1.
-        }
-        eapply CM_Inherit; eauto.
-        *
-        {
-          assert (Hwf_class_C : wf_class CT class_def_C).
-          {
-            unfold wf_class_table in hwf.
-            destruct hwf as [Hforall_wf _].
-            eapply Forall_nth_error; eauto.
-          }
-          inversion Hwf_class_C; subst.
-          - (* WFObjectDef case - contradiction since C has a parent *)
-            rewrite H4 in Hsuper_eq.
-            discriminate.
-          - (* WFOtherDef case *)
-            assert (Hcname_eq : cname (signature class_def_C) = C).
-            {
-              unfold wf_class_table in hwf.
-              destruct hwf as [_ [_ [_ Hcname_consistent]]].
-              apply Hcname_consistent.
-              exact Hfind_C.
-            }
-            rewrite Hcname_eq.
-            rewrite H5 in Hsuper_eq.
-            injection Hsuper_eq as Heq.
-            subst superC.
-            rewrite Hcname_eq in H7.
-            exact H7.
-        }
-      + erewrite override_parent_method_preserved; eauto.
 Qed.
 
 Lemma In_gget_method_unique : forall method_list mdef m,
@@ -629,76 +549,98 @@ Proof.
   - exact Hname.
 Qed.
 
-Lemma overriding_method_same_param_length : forall CT C mdef parent_mdef,
+Lemma constructor_params_field_count : forall CT C ctor csig fields,
   wf_class_table CT ->
-  FindOverridingMethod CT C mdef parent_mdef ->
-  List.length (mparams (msignature mdef)) = List.length (mparams (msignature parent_mdef)).
+  C < dom CT ->
+  constructor_def_lookup CT C = Some ctor ->
+  csig = csignature ctor ->
+  CollectFields CT C fields ->
+  List.length (sparams csig) + List.length (cparams csig) = List.length fields.
 Proof.
-  intros CT C mdef parent_mdef Hwf_classtable Hoverride.
-  inversion Hoverride; subst.
-  (* From H7: param_types = parent_param_types *)
+  intros CT C ctor csig fields Hwf_ct Hdom Hctor_lookup Hcsig Hcollect.
+  subst csig.
   
-  (* Use the fact that MethodParametersBaseTypeLookup extracts base types *)
-  inversion H3; subst. (* MethodParametersBaseTypeLookup CT C ... *)
-  inversion H5; subst. (* MethodParametersBaseTypeLookup CT parentname ... *)
-  assert (Hparent_eq : mdef1 = parent_mdef).
+  (* Get the class definition *)
+  assert (Hclass_exists : exists cdef, find_class CT C = Some cdef).
   {
-    assert (Hlookup_mdef1 : MethodLookup CT parentname (mname (msignature mdef)) mdef1).
-    {
-      econstructor; eauto.
-    }
-    eapply method_lookup_deterministic; eauto.
+    apply nth_error_Some_exists.
+    exact Hdom.
   }
-
-  (* Establish that mdef0 = mdef using the base type lookup and method lookup *)
-  assert (Hmdef_eq : mdef0 = mdef).
+  destruct Hclass_exists as [cdef Hfind_class].
+  
+  (* Extract well-formedness of the class *)
+  assert (Hwf_class : wf_class CT cdef).
   {
-    assert (Hlookup_mdef0 : MethodLookup CT C (mname (msignature mdef)) mdef0).
-    {
-      econstructor; eauto.
-    }
-    rename methods into dmethods.
-    assert (Hgget_own : gget_method (methods (body cdef)) (mname (msignature mdef)) = Some mdef).
-    {
-      eapply In_gget_method_unique_class; eauto.
-    }
-
-    (* Now use the structure of CollectMethods to show mdef is found in collected methods *)
-    inversion H7; subst.
-    - (* CM_NotFound case - contradiction *)
-      rewrite H in H12. discriminate.
-    - (* CM_Object case *)
-      rewrite H in H12. injection H12 as Heq. subst cdef.
-      rewrite H8 in Hgget_own.
-      inversion Hgget_own.
-      reflexivity.
-    - (* CM_Inherit case *)
-      rewrite H in H12. injection H12 as Heq. subst cdef.
-      assert (Hoverride_eq : gget_method (override parent_methods (methods (body def))) (mname (msignature mdef)) = Some mdef).
-    {
-      eapply override_own_method_found; eauto.
-    }
-    rewrite Hoverride_eq in H8.
-    injection H8 as Heq.
-    symmetry.
-    exact Heq.
+    unfold wf_class_table in Hwf_ct.
+    destruct Hwf_ct as [Hforall_wf _].
+    eapply Forall_nth_error; eauto.
   }
-
-  (* Now use the equality from H11 *)
-  rewrite Hmdef_eq in H11.
-  rewrite Hparent_eq in H11.
-  assert (Hlen1 : List.length (map sctype (mparams (msignature mdef))) = List.length (mparams (msignature mdef))).
+  
+  (* Extract constructor well-formedness *)
+  assert (Hctor_eq : constructor (body cdef) = ctor).
   {
-    apply length_map.
+    unfold constructor_def_lookup in Hctor_lookup.
+    rewrite Hfind_class in Hctor_lookup.
+    injection Hctor_lookup as Hctor_eq.
+    exact Hctor_eq.
   }
-  assert (Hlen2 : List.length (map sctype (mparams (msignature parent_mdef))) = List.length (mparams (msignature parent_mdef))).
-  {
-    apply length_map.
-  }
-  rewrite <- Hlen1, <- Hlen2.
-  rewrite H11.
-  reflexivity.
-Qed.
+  
+  (* Use constructor well-formedness from wf_class *)
+  inversion Hwf_class; subst.
+  - (* Object class case: C = 0 *)
+    inversion H4; subst.
+    fold sig0.
+    rewrite H9.
+    rewrite H10.
+    inversion Hcollect.
+    easy.
+    easy.
+    unfold parent_lookup in H3.
+    assert (HfindC: cdef = def). {
+      eapply find_class_consistent; eauto.
+    }
+    exfalso.
+    (* subst def. *)
+    unfold parent_lookup in H3.
+    rewrite HfindC in H3.
+    subst cdef.
+    apply find_class_cname_consistent in Hfind_class.
+    rewrite Hfind_class in H3.
+    rewrite H13 in H3.
+    rewrite H14 in H3.
+    discriminate H3. exact Hwf_ct.
+    unfold parent_lookup in H3.
+    exfalso.
+    have Hfind_class_copy := Hfind_class.
+    apply find_class_cname_consistent in Hfind_class.
+    rewrite Hfind_class in H3.
+    rewrite Hfind_class_copy in H3.
+    rewrite H in H3.
+    discriminate.
+    exact Hwf_ct.
+  - (* Regular class case *)
+    destruct H3 as [Hwf_ctor [Hnodup_methods [Hforall_methods Hforall_fields]]].
+    inversion Hwf_ctor; subst.
+    unfold parent_lookup in H1.
+    have Hfind_class_copy := Hfind_class.
+    apply find_class_cname_consistent in Hfind_class.
+    assert (C0 = C). {
+      unfold C0.
+      unfold sig.
+      exact Hfind_class.
+    }
+    subst C0.
+    rewrite H9 in H1.
+    rewrite Hfind_class_copy in H1.
+    rewrite H0 in H1.
+    discriminate.
+    exact Hwf_ct.
+    fold bod.
+    fold sig1.
+    fold stypes.
+    
+    admit.
+Admitted.
 
 Lemma eval_stmt_preserves_heap_domain_simple : forall CT rΓ h stmt rΓ' h',
   eval_stmt OK CT rΓ h stmt OK rΓ' h' ->
@@ -861,6 +803,32 @@ Proof.
   exact Hwf.
 Qed.
 
+Lemma r_basetype_in_dom : forall CT h loc cy,
+  wf_heap CT h ->
+  r_basetype h loc = Some cy ->
+  cy < dom CT.
+Proof.
+  intros CT h loc cy Hwf_heap Hr_basetype.
+  unfold r_basetype in Hr_basetype.
+  destruct (runtime_getObj h loc) as [obj|] eqn:Hobj; [|discriminate].
+  injection Hr_basetype as Heq.
+  subst cy.
+  destruct obj as [rt_obj fields_obj].
+  destruct rt_obj as [rq_obj rc_obj].
+  simpl.
+  unfold wf_heap in Hwf_heap.
+  assert (Hloc_dom : loc < dom h) by (apply runtime_getObj_dom in Hobj; exact Hobj).
+  specialize (Hwf_heap loc Hloc_dom).
+  unfold wf_obj in Hwf_heap.
+  rewrite Hobj in Hwf_heap.
+  destruct Hwf_heap as [Hwf_rtypeuse _].
+  unfold wf_rtypeuse in Hwf_rtypeuse.
+  simpl in Hwf_rtypeuse.
+  destruct (bound CT rc_obj) as [qc|] eqn:Hbound.
+  - exact Hwf_rtypeuse.
+  - contradiction.
+Qed.
+
 (* ------------------------------------------------------------- *)
 (* Soundness properties for PICO *)
 Theorem preservation_pico :
@@ -881,7 +849,7 @@ Proof.
     destruct H1 as [mdeflookup getmbody].
     remember (msignature mdef) as msig.
     have mdeflookupcopy := mdeflookup.
-    apply method_body_well_typed in mdeflookup; auto.
+    apply method_body_well_typed_dispatch in mdeflookup; auto.
     destruct mdeflookup as [sΓmethodend Htyping_method].
     remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
     remember {| vars := Iot ly :: vals |} as rΓmethodinit.
@@ -947,7 +915,7 @@ Proof.
       subst.
 
       (* Receiver type is well-formed *)
-      eapply method_sig_wf_reciever; eauto.
+      eapply method_sig_wf_receiver_dispatch; eauto.
       unfold r_basetype in H0.
       destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
       injection H0 as H2_eq.
@@ -967,7 +935,7 @@ Proof.
       exact Hwf_rtypeuse.
       contradiction.
 
-      eapply method_sig_wf_parameters; eauto.
+      eapply method_sig_wf_parameters_dispatch; eauto.
       unfold r_basetype in H0.
       destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
       injection H0 as H2_eq.
@@ -995,7 +963,6 @@ Proof.
       f_equal.
       apply Forall2_length in H23.
       rewrite <- Heqmsig.
-
       assert (Hsubtype : base_subtype CT cy (sctype Ty)).
       {
         assert (Hy_dom : y < dom sΓ').
@@ -1035,23 +1002,55 @@ Proof.
         destruct Hcorr as [Hsubtype _].
         exact Hsubtype.
       }
-
-      (* Check if there's an overriding relationship *)
-      destruct (classic (exists parent_mdef, FindOverridingMethod CT cy mdef parent_mdef /\ parent_mdef = mdef0)) as [Hoverride | Hno_override].
-      destruct Hoverride as [parent_mdef [Hfind_override Heq_parent]].
-      subst parent_mdef.
-      apply overriding_method_same_param_length in Hfind_override.
-      rewrite <- Hfind_override in H23.
-      rewrite <- Heqmsig in H23.
-      rewrite <- H23.
-      rewrite H15.
-      symmetry.
-      exact H4.
+      rewrite <- H4 in H15.
+      rewrite <- H15.
+      rewrite H23.
+      rewrite Heqmsig.
+      eapply wf_method_override_same_param_length_general; eauto.
+      eapply r_basetype_in_dom ; eauto.
+      apply base_subtype_CD in Hsubtype.
+      apply r_basetype_in_dom with (CT:=CT) in H0; auto. 
+      lia.
       exact Hclasstable.
-      exfalso.
+      have mdeflookupcopyagain := mdeflookupcopy.
+      apply find_method_with_name_consistent in mdeflookupcopy; eauto.
+      rewrite mdeflookupcopy.
+      exact mdeflookupcopyagain.
+      apply find_method_with_name_consistent in mdeflookupcopy; eauto. 
+      rewrite mdeflookupcopy.
+      exact H16.
+
+      intros i Hi sqt Hnth.
+      rewrite HeqsΓmethodinit in Hnth, Hi.
+      rewrite HeqrΓmethodinit.
+      simpl in *.
+      destruct i as [|i'].
+      (* Reciever *)
+      simpl in Hnth.
+      injection Hnth as Hsqt_eq.
+      subst sqt.
+      simpl.
+      (* Need to prove wf_r_typable CT rΓmethodinit h ly (mreceiver (msignature mdef)) *)
+      unfold wf_r_typable.
+      unfold r_type.
+      destruct (runtime_getObj h ly) as [obj|] eqn:Hobj_ly.
+      2:{
+        unfold r_basetype in H0.
+        rewrite Hobj_ly in H0.
+        discriminate.
+      }
+      (* Get the runtime type *)
+      simpl.
+      destruct (r_muttype h ly) as [qy|] eqn:Hq_ly.
+      2:{
+        unfold r_muttype in Hq_ly.
+        rewrite Hobj_ly in Hq_ly.
+        discriminate.
+      }
+      split.
 
       admit.
-
+      admit.
       admit.
     }
     assert (wf_r_config CT sΓmethodend rΓ'' h'). 
@@ -1165,6 +1164,22 @@ Proof.
           (* Use the fact that retval is well-typed from method return *)
           unfold runtime_getVal in H6.
           destruct retval as [|loc]; [trivial|].
+          assert (Hret_dom : mreturn mbody < dom (vars rΓ'')).
+          {
+            apply nth_error_Some.
+            rewrite H6.
+            discriminate.
+          }
+          rewrite <- Hlen in Hret_dom.
+          specialize (Hcorr (mreturn mbody) Hret_dom (mret (msignature mdef0))).
+          assert (Hret_type : exists type_val_ret, nth_error sΓmethodend (mreturn mbody) = type_val_ret).
+          {
+            admit.
+          }
+          (* specialize (Hcorr Hret_type).
+          unfold runtime_getVal in Hcorr.
+          rewrite H6 in Hcorr. *)
+          unfold wf_r_typable in *.
           (* retval comes from method execution, so it's well-typed *)
           admit.
       - (* Case: i ≠ x (unchanged variable) *)
@@ -1722,10 +1737,73 @@ Proof.
 
               intros b Hnth_b.
               destruct v2 as [|loc2]; [trivial|].
-              admit.
+
+              assert (Hy_dom : y < dom sΓ').
+              {
+                apply static_getType_dom in H9. exact H9.
+              }
+              specialize (Hcorr y Hy_dom Ty H9).
+              destruct (runtime_getVal rΓ y) as [loc_y|] eqn:Hy_val; [|contradiction].
+              injection H2 as Hloc2_eq.
+              subst loc_y.
+              unfold update_field.
+              destruct (runtime_getObj h lx) as [o_lx|] eqn:Hobj_lx.
+              destruct (Nat.eq_dec loc2 lx) as [Heq_loc2_lx | Hneq_loc2_lx].
+                (* Case: loc2 = lx *)
+                subst loc2.
+                unfold runtime_getObj.
+                rewrite update_same; [exact Hdom|].
+                unfold wf_r_typable in Hcorr.
+                destruct (r_type h lx) as [rqt_x|] eqn:Hrtype_x; [|contradiction Hcorr].
+                destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis_var; [|contradiction Hcorr].
+                destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction Hcorr].
+                destruct Hcorr as [Hbase_sub Hqual_typable].
+                exists rqt_x.
+                split.
+                  unfold r_type.
+                  simpl.
+                  unfold runtime_getObj.
+                  rewrite update_same; [exact Hdom|].
+                  simpl.
+                  unfold r_type in Hrtype_x.
+                  rewrite Hobj_lx in Hrtype_x.
+                  injection Hobj as Ho_eq.
+                  injection H0 as Ho_eq2.
+                  subst o_lx o_new.
+                  exact Hrtype_x.
+                  admit.
+              (* exact H15. *)
+              (* Case: loc2 ≠ lx *)
+                unfold runtime_getObj.
+                rewrite update_diff; [symmetry; exact Hneq_loc2_lx|].
+                unfold wf_r_typable in Hcorr.
+                destruct (r_type h loc2) as [rqt_loc2|] eqn:Hrtype_loc2; [|contradiction Hcorr].
+                destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis_var; [|contradiction Hcorr].
+                destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction Hcorr].
+                destruct Hcorr as [Hbase_sub Hqual_typable].
+                assert (Hloc2_dom : loc2 < dom h).
+                {
+                  (* loc2 comes from wf_r_typable, so it must be in heap domain *)
+                  unfold r_type in Hrtype_loc2.
+                  apply r_type_dom in Hrtype_loc2.
+                  exact Hrtype_loc2.
+                }
+                destruct (nth_error h loc2) as [obj_loc2|] eqn:Hnth_loc2.
+                (* Case: loc2 exists in heap *)
+                  exists rqt_loc2.
+                  split.
+                  unfold r_type.
+                  unfold runtime_getObj.
+                  rewrite update_diff; [symmetry; exact Hneq_loc2_lx|].
+                  exact Hrtype_loc2.
+                  admit.
+                (* Case: loc2 doesn't exist - contradiction *)
+                  exfalso.
+                  apply nth_error_None in Hnth_loc2.
+                  lia.
+                  exfalso.
+                  discriminate Hobj.
             }
-
-
         -- unfold wf_obj, runtime_getObj.
         rewrite update_diff.
         ** rewrite update_length in Hdom.
@@ -1914,8 +1992,9 @@ Proof.
   - (* Case: stmt = New *)
     intros.
     inversion Htyping.
-    (* subst. *)
-    unfold wf_r_config in *.
+    have Hwf_copy := Hwf.
+    unfold wf_r_config.
+    unfold wf_r_config in Hwf.
     destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) 
@@ -1963,7 +2042,57 @@ Proof.
             --- discriminate Hctor.
           ** discriminate H14.
       --
+        {
+          assert (Hc_dom : c < dom CT).
+   {
+     apply constructor_sig_lookup_dom in H14.
+     exact H14.
+   }
+   
+   (* Collect fields for class c *)
+   assert (Hexists_fields : exists field_defs, CollectFields CT c field_defs).
+   {
+     eapply collect_fields_exists; eauto.
+   }
+   destruct Hexists_fields as [field_defs Hcollect_fields].
+   
+   exists field_defs.
+   split.
+   + (* CollectFields CT c field_defs *)
+     exact Hcollect_fields.
+   + split.
+     * (* Length equality: dom vals = dom field_defs *)
+       (* This follows from constructor well-formedness *)
+       (* The constructor should ensure vals has the right length *)
+       simpl.
+       apply Forall2_length in H23.
+       apply Forall2_length in H24.
+       apply runtime_lookup_list_preserves_length in H0.
+       apply static_getType_list_preserves_length in H13.
+       assert (Hargs_total : dom argtypes = dom (sparams consig) + dom (cparams consig)).
+      assert (Hargs_total : dom argtypes = dom (sparams consig) + dom (cparams consig)).
+      {
+        rewrite <- H23, <- H24.
+        rewrite <- length_app.
+        rewrite firstn_skipn.
+        reflexivity.
+      }
+      exact Hargs_total.
+      rewrite H0.
+      rewrite <- H13.
+      rewrite Hargs_total.
+      eapply constructor_sig_lookup_implies_def in H14; eauto.
+      destruct H14 as [cdef Hcedflookup].
+      destruct Hcedflookup as [Hcedflookup Hcdefcsig].
+      eapply constructor_params_field_count; eauto.
+     * (* Forall2 property *)
+       (* Each value in vals is well-typed according to field_defs *)
+       (* This follows from the typing of constructor arguments *)
+       apply runtime_lookup_list_preserves_typing with (CT:= CT) ( h := h) (sΓ := sΓ') (args := ys) (argtypes := argtypes) in H0; auto.
+       (* Use H23, H24 to show arguments are well-typed *)
+       (* Then use constructor well-formedness to connect to field types *)
        admit.
+      }
     * (* ι < dom h (existing object) *)
       assert (ι < dom h) by lia.
       unfold wf_obj.
@@ -2489,12 +2618,15 @@ Proof.
   - (* Call *) (* Similar to other non-mutating cases *) 
   intros.
   revert H7.
-  inversion H14; subst.
+  inversion H14. 
+  revert H17.
+  subst.
+  intro H17.
   intro H7.
   destruct H2 as [mdeflookup getmbody].
   remember (msignature mdef) as msig.
   have mdeflookupcopy := mdeflookup.
-  apply method_body_well_typed in mdeflookup; auto.
+  apply method_body_well_typed_dispatch in mdeflookup; auto.
   destruct mdeflookup as [sΓmethodend Htyping_method].
   remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
   apply IHeval_stmt with (sΓ' := sΓmethodend)(sΓ := sΓmethodinit). 1-5: auto.
@@ -2557,7 +2689,7 @@ Proof.
     rewrite HeqsΓmethodinit.
     constructor.
     (* Receiver type is well-formed *)
-    eapply method_sig_wf_reciever; eauto.
+    eapply method_sig_wf_receiver_dispatch; eauto.
     unfold r_basetype in H1.
     destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
     injection H1 as H1_eq.
@@ -2577,7 +2709,7 @@ Proof.
     exact Hwf_rtypeuse.
     contradiction.
 
-    eapply method_sig_wf_parameters; eauto.
+    eapply method_sig_wf_parameters_dispatch; eauto.
     unfold r_basetype in H1.
     destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
     injection H1 as H1_eq.
@@ -2596,10 +2728,76 @@ Proof.
     destruct (bound CT rc_obj) as [class_def|] eqn:Hbound.
     exact Hwf_rtypeuse.
     contradiction.
-    admit.
+
+    apply static_getType_list_preserves_length in H21.
+      apply runtime_lookup_list_preserves_length in H6.
+      rewrite HeqsΓmethodinit.
+      simpl.
+      f_equal.
+      apply Forall2_length in H29.
+      rewrite <- Heqmsig.
+
+      assert (Hsubtype : base_subtype CT cy (sctype Ty)).
+      {
+        assert (Hy_dom : y < dom sΓ').
+        {
+          apply static_getType_dom in H20.
+          exact H20.
+        }
+
+        (* Apply correspondence to get wf_r_typable *)
+        specialize (Hcorr y Hy_dom Ty H20).
+        rewrite H0 in Hcorr.
+
+        (* Extract subtyping from wf_r_typable *)
+        unfold wf_r_typable in Hcorr.
+        unfold r_basetype in H1.
+        unfold r_type.
+        destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
+        injection H1 as Hcy_eq.
+        subst cy.
+        destruct obj as [rt_obj fields_obj].
+        destruct rt_obj as [rq_obj rc_obj].
+
+
+        unfold wf_renv in Hrenv.
+        destruct Hrenv as [_ [Hreceiver _]].
+        destruct Hreceiver as [iot [Hget_iot _]].
+        unfold get_this_var_mapping.
+        unfold gget in Hget_iot.
+        destruct (vars rΓ) as [|v0 vs] eqn:Hvars; [discriminate|].
+        injection Hget_iot as Hv0_eq.
+        subst v0.
+
+        unfold r_type in Hcorr.
+        rewrite Hobjy in Hcorr.
+        simpl in Hcorr.
+        destruct (r_muttype h iot) as [q|] eqn:Hmut; [|contradiction].
+        destruct Hcorr as [Hsubtype _].
+        exact Hsubtype.
+      }
+    rewrite <- H6 in H21.
+    rewrite H7.
+    simpl.
+    f_equal.
+    rewrite <- H21.
+    rewrite Heqmsig.
+    rewrite H29.
+    eapply wf_method_override_same_param_length_general; eauto.
+    eapply r_basetype_in_dom ; eauto.
+    apply base_subtype_CD in Hsubtype.
+    apply r_basetype_in_dom with (CT:=CT) in H1; auto. 
+    lia.
+    exact Hclasstable.
+    have mdeflookupcopyagain := mdeflookupcopy.
+    apply find_method_with_name_consistent in mdeflookupcopy; eauto.
+    rewrite mdeflookupcopy.
+    exact mdeflookupcopyagain.
+    apply find_method_with_name_consistent in mdeflookupcopy; eauto. 
+    rewrite mdeflookupcopy.
+    exact H22.
 
     admit.
-
   }
   exact Hwf_method_frame.
   rewrite <- getmbody in Htyping_method.

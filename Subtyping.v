@@ -48,6 +48,18 @@ Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
       base_subtype CT C D.
 Global Hint Constructors base_subtype: typ.
 
+
+Inductive base_subtype_strict : class_table -> class_name -> class_name -> Prop :=
+  | base_trans_strict : forall (CT : class_table) (C D E : class_name),
+      base_subtype_strict CT C D ->
+      base_subtype_strict CT D E -> 
+      base_subtype_strict CT C E
+  | base_extends_strict : forall (CT : class_table) (C D : class_name),
+      C < dom CT ->
+      D < dom CT ->
+      parent_lookup CT C = Some D ->
+      base_subtype_strict CT C D.
+
 (* Qualified type subtyping *)
 Inductive qualified_type_subtype : class_table -> qualified_type -> qualified_type -> Prop :=
   | qtype_sub : forall CT qt1 qt2,

@@ -358,7 +358,7 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
   | SBS_Call: forall CT rΓ h x y m zs vals ly cy mdef mbody mstmt mret retval h' rΓ' rΓ'' rΓ''',
     runtime_getVal rΓ y = Some (Iot ly) ->
     r_basetype h ly = Some cy ->
-    MethodLookup CT cy m mdef /\ mbody = Syntax.mbody mdef ->
+    FindMethodWithName CT cy m mdef /\ mbody = Syntax.mbody mdef ->
     mstmt = mbody.(mbody_stmt) ->
     mret = mbody.(mreturn) ->
     runtime_lookup_list rΓ zs = Some vals ->
@@ -377,7 +377,7 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
   | SBS_Call_NPE_Body: forall CT rΓ h x y m zs vals ly cy mdef mbody mstmt mret h' rΓ' rΓ'',
     runtime_getVal rΓ y = Some (Iot ly) ->
     r_basetype h ly = Some cy ->
-    MethodLookup CT cy m mdef /\ mbody = Syntax.mbody mdef ->
+    FindMethodWithName CT cy m mdef /\ mbody = Syntax.mbody mdef ->
     mstmt = mbody.(mbody_stmt) ->
     mret = mbody.(mreturn) ->
     runtime_lookup_list rΓ zs = Some vals ->
