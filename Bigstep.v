@@ -328,13 +328,13 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
     h'
 
   (* evaluate field write statement *)
-  | SBS_FldWrite: forall CT rΓ h x f y lx o vf v2 h',
-      runtime_getVal rΓ x = Some (Iot lx) ->
-      runtime_getObj h lx = Some o ->
+  | SBS_FldWrite: forall CT rΓ h x f y loc_x o vf val_y h',
+      runtime_getVal rΓ x = Some (Iot loc_x) ->
+      runtime_getObj h loc_x = Some o ->
       getVal o.(fields_map) f = Some vf ->
-      runtime_getVal rΓ y = Some v2 ->
-      (* can_assign CT rΓ h lx f = true -> *) (* Runtime need no check *)
-      h' = update_field h lx f v2 ->
+      runtime_getVal rΓ y = Some val_y ->
+      (* can_assign CT rΓ h loc_x f = true -> *) (* Runtime need no check *)
+      h' = update_field h loc_x f val_y ->
       eval_stmt OK CT rΓ h (SFldWrite x f y) OK rΓ h'
 
   (* evaluate field write statement NPE *)
@@ -553,7 +553,7 @@ Lemma qualifier_typable_vpa_subtype : forall CT qr q_proj T1 T2,
   qualifier_typable qr (vpa_mutabilty q_proj (sqtype T2)).
 Proof.
   intros CT qr q_proj T1 T2 T1dom T2dom Hsub Hqual1.
-  apply qualified_type_subtype_q_subtype in Hsub; [| exact T1dom| exact T2dom].
+  apply qualified_type_subtype_q_subtype in Hsub.
   unfold qualifier_typable in *.
   destruct qr as [|].
   - (* Goal 1: Mut_r case *)
@@ -591,8 +591,6 @@ Proof.
   apply base_trans with (D:= sctype T1).
   exact Hbase1.
   exact Hsub.
-  exact Hc1dom.
-  exact Hc2dom.
   eapply qualifier_typable_vpa_subtype; [exact Hc1dom | exact Hc2dom| exact Hsub | exact Hqual1].
 Qed.
 
@@ -802,9 +800,9 @@ Proof.
   induction H0; intros; subst; try discriminate.
   1-3: exists vals; assumption.
   - (* SBS_FldWrite *)
-    destruct (Nat.eq_dec loc lx).
-    + subst lx. rewrite H0 in H4. inversion H4; subst.
-      exists (update f v2 vals). unfold runtime_getObj.
+    destruct (Nat.eq_dec loc loc_x).
+    + subst loc_x. rewrite H0 in H4. inversion H4; subst.
+      exists (update f val_y vals). unfold runtime_getObj.
       unfold update_field. rewrite H0. simpl.
       rewrite update_same; auto. apply runtime_getObj_dom in H0; auto.
     + exists vals. unfold runtime_getObj. unfold update_field. rewrite H0.
@@ -1156,51 +1154,6 @@ Proof.
       {| sqtype := (mutability (ftype fDef)); 
         sctype := f_base_type (ftype fDef) |}).
     + exact Hsubtype.
-    + (* Domain constraints follow from well-formedness *)
-      unfold runtime_type_to_qualified_type. simpl.
-      assert (Hloc_dom : loc < dom h).
-      {
-        apply runtime_getObj_dom in Hloc_obj. exact Hloc_obj.
-      }
-      apply Hwf_heap in Hloc_dom.
-      unfold wf_obj in Hloc_dom.
-      rewrite Hloc_obj in Hloc_dom.
-      destruct Hloc_dom as [Hwf_rtype _].
-      unfold wf_rtypeuse in Hwf_rtype.
-      destruct (bound CT (rctype rqt)) as [qc|] eqn:Hbound.
-      ** 
-      assert (Hrqt_eq : rqt = rt_type o_loc).
-      {
-        unfold r_type in Hrtype_loc.
-        rewrite Hloc_obj in Hrtype_loc.
-        injection Hrtype_loc as Hrqt_eq.
-        symmetry. exact Hrqt_eq.
-      }
-      rewrite Hrqt_eq in Hbound.
-      rewrite Hbound in Hwf_rtype.
-      rewrite Hrqt_eq.
-      exact Hwf_rtype.
-      ** 
-      assert (Hrqt_eq : rqt = rt_type o_loc).
-      {
-        unfold r_type in Hrtype_loc.
-        rewrite Hloc_obj in Hrtype_loc.
-        injection Hrtype_loc as Hrqt_eq.
-        symmetry. exact Hrqt_eq.
-      }
-      rewrite Hrqt_eq in Hbound.
-      rewrite Hbound in Hwf_rtype.
-      contradiction Hwf_rtype.
-    + 
-    simpl.
-    assert (Hwf_field : wf_field CT fDef).
-    {
-      eapply sf_def_rel_wf_field; eauto.
-    }
-    unfold wf_field, wf_stypeuse in Hwf_field.
-    destruct (bound CT (f_base_type (ftype fDef))) as [qc|] eqn:Hbound.
-    ** destruct Hwf_field as [_ [_ Hdom]]. exact Hdom.
-    ** destruct Hwf_field. exfalso. exact H3.
   -- (* Qualifier typability *)
     unfold vpa_type_to_type.
     destruct (rqtype rqt) as [|] eqn: rq.

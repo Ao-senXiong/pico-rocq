@@ -993,6 +993,7 @@ Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop 
     constructor_sig_lookup CT superclass_name = Some supercons_sig -> 
     let super_full_params := sparams supercons_sig ++ cparams supercons_sig in 
     length super_full_params = length stypes ->
+    length (sparams sig) + length (cparams sig) = length this_fields_def ->
     Forall2 (fun arg T => qualified_type_subtype CT arg (vpa_qualified_type q_c T)) stypes super_full_params ->
     wf_constructor CT C ctor
   .
@@ -1017,9 +1018,9 @@ Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
       FindMethodWithName CT D (mname msig) supermdef ->
       mdef = supermdef \/
       (let supermsig := msignature supermdef in 
-       Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) T1) (vpa_qualified_type (sqtype (mreceiver msig)) T2)) (mparams supermsig) (mparams msig) /\
+       Forall2 (fun T1 T2 => qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) T1) T2) (mparams supermsig) (mparams msig) /\
        qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mreceiver supermsig)) (mreceiver msig) /\
-       qualified_type_subtype CT (vpa_qualified_type (sqtype (mreceiver msig)) (mret msig)) (vpa_qualified_type (sqtype (mreceiver msig)) (mret supermsig)))) ->
+       qualified_type_subtype CT (mret msig) (vpa_qualified_type (sqtype (mreceiver msig)) (mret supermsig)))) ->
     wf_method CT C mdef.
 
 (* Well-formedness of class *)
@@ -2687,6 +2688,72 @@ destruct (Nat.eq_dec E F) as [HeqEF | HneqEF].
   admit.
 Admitted.
 
+Lemma wf_method_override_rettype_base_equal: forall CT C mdef D supermdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  D < dom CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT C (mname (msignature mdef)) mdef ->
+  FindMethodWithName CT D (mname (msignature mdef)) supermdef ->
+  sctype (mret (msignature mdef)) = sctype (mret (msignature supermdef)).
+Proof.
+Admitted.
+
+Lemma wf_method_override_paramstype_base_equal: forall CT C mdef D supermdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  D < dom CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT C (mname (msignature mdef)) mdef ->
+  FindMethodWithName CT D (mname (msignature mdef)) supermdef ->
+  Forall2 (fun mp smp => (sctype mp) = (sctype smp)) (mparams (msignature mdef)) (mparams (msignature supermdef)).
+Proof.
+Admitted.
+
+Lemma wf_method_override_receiver_base_subtype: forall CT C mdef D supermdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  D < dom CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT C (mname (msignature mdef)) mdef ->
+  FindMethodWithName CT D (mname (msignature mdef)) supermdef ->
+  base_subtype CT (sctype (mreceiver (msignature mdef))) (sctype (mreceiver (msignature supermdef))).
+Proof.
+Admitted.
+
+Lemma wf_method_override_reciever_qualifer_subtype: forall CT C mdef D supermdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  D < dom CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT C (mname (msignature mdef)) mdef ->
+  FindMethodWithName CT D (mname (msignature mdef)) supermdef ->
+  q_subtype (vpa_mutabilty (sqtype (mreceiver (msignature mdef))) (sqtype (mreceiver (msignature supermdef)))) (sqtype (mreceiver (msignature mdef))) .
+Proof.
+Admitted.
+
+Lemma wf_method_override_return_qualifer_subtype: forall CT C mdef D supermdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  D < dom CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT C (mname (msignature mdef)) mdef ->
+  FindMethodWithName CT D (mname (msignature mdef)) supermdef ->
+  q_subtype  (sqtype (mret (msignature mdef))) (vpa_mutabilty (sqtype (mreceiver (msignature mdef))) (sqtype (mret (msignature supermdef)))).
+Proof.
+Admitted.
+
+Lemma wf_method_override_params_qualifer_subtype: forall CT C mdef D supermdef,
+  wf_class_table CT ->
+  C < dom CT ->
+  D < dom CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT C (mname (msignature mdef)) mdef ->
+  FindMethodWithName CT D (mname (msignature mdef)) supermdef ->
+  Forall2 (fun mp smp => q_subtype (sqtype mp) (vpa_mutabilty (sqtype (mreceiver (msignature mdef))) (sqtype smp))) (mparams (msignature mdef)) (mparams (msignature supermdef)).
+Proof.
+Admitted.
+
 Lemma override_local_precedence : forall parent_methods own_methods m mdef,
   gget_method own_methods m = Some mdef ->
   gget_method (override parent_methods own_methods) m = Some mdef.
@@ -2698,36 +2765,13 @@ Proof.
   exact Hown.
 Qed.
 
-(* Lemma method_lookup_to_find_override : forall CT C m mdef,
-  MethodLookup CT C m mdef ->
-  FindMethodWithName CT C m mdef.
+Lemma collect_fields_consistent_through_subtyping : forall CT C D fields1 fields2 f fdef1 fdef2,
+  wf_class_table CT ->
+  base_subtype CT C D ->
+  CollectFields CT C fields1 ->
+  CollectFields CT D fields2 ->
+  gget fields1 f = Some fdef1 ->
+  gget fields2 f = Some fdef2 ->
+  fdef1 = fdef2.
 Proof.
-  intros CT C m mdef Hlookup.
-  induction Hlookup.
-  inversion H; subst.
-  - (* CM_NotFound case *)
-    (* This case shouldn't happen if MethodLookup succeeded *)
-    unfold gget_method in H0.
-    discriminate.
-  - (* CM_Object case *)
-    apply FOM_Here with def (methods (body def)); auto.
-
-  - (* CM_Inherit case *)
-    destruct (gget_method (methods (body def)) m) as [local_mdef|] eqn:Hlocal.
-    + (* Method found locally *)
-      apply FOM_Here with def (methods (body def)); auto.
-      have Hprecedence := override_local_precedence parent_methods (methods (body def)) m local_mdef Hlocal.
-      rewrite Hprecedence in H0.
-      injection H0 as Heq.
-      subst local_mdef.
-      exact Hlocal.
-    + (* Method inherited from parent *)
-      apply FOM_Super with def parent (methods (body def)); auto.
-      assert (Hparent_method : gget_method parent_methods m = Some mdef).
-      {
-        have Hinherited := override_parent_method_preserved parent_methods (methods (body def)) m Hlocal.
-        rewrite Hinherited in H0.
-        exact H0.
-      }
-      eapply collect_methods_to_find_override; eauto.
-Qed. *)
+Admitted.

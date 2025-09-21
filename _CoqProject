@@ -9,5 +9,6 @@ Subtyping.v
 Typing.v
 Bigstep.v
 Properties.v
+Testproperties.v
 Todoproperty.v
 Main.v
