@@ -41,6 +41,56 @@ Definition r_type (h: heap) (ι: Loc) : option runtime_type :=
   | Some o => Some (rt_type o)
   end.
 
+(* Determine whether an assignment should be allowed *)
+(* Definition can_assign (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (f: var) : bool :=
+  match r_muttype h ι, r_basetype h ι with
+  | Some q, Some c =>
+    match sf_assignability_rel CT c f with
+    | Some a =>
+        (* match rΓ.(init_state), vpa_assignability (q_r_proj q) a with
+        (* | initing, _ => true *)
+        | _, Assignable => true
+        | _, _ => false
+        end *)
+        match vpa_assignability (q_r_proj q) a with
+        (* | initing, _ => true *)
+        | Assignable => true
+        |  _ => false
+        end
+    | None => false
+    end
+  | _, _ => false
+  end.
+
+Lemma can_assign_immutable_final_false :
+  forall CT rΓ h ι f o,
+    r_muttype h ι = Some (exist _ Imm (or_intror eq_refl)) ->
+    runtime_getObj h ι = Some o ->
+    sf_assignability CT (rctype (rt_type o)) f = Some Final \/
+    sf_assignability CT (rctype (rt_type o)) f = Some RDA ->
+    can_assign CT rΓ h ι f = false.
+Proof.
+  intros.
+  unfold can_assign.
+  rewrite H.
+  unfold r_basetype.
+  rewrite H0.
+  simpl.
+  destruct H1 as [HFinal | HRDA].
+  - (* Case: Final *)
+    rewrite HFinal.
+    simpl.
+    unfold vpa_assignability.
+    simpl.
+    reflexivity.
+  - (* Case: RDA *)
+    rewrite HRDA.
+    simpl.
+    unfold vpa_assignability.
+    simpl.
+    reflexivity.
+Qed. *)
+
 Definition update_field (h: heap) (ι: Loc) (f: var) (v: value) : heap :=
   match runtime_getObj h ι with
   | None => h
@@ -73,6 +123,9 @@ Definition wf_rtypeuse (CT: class_table) (q: q_r) (c: class_name) : Prop :=
   match (bound CT c) with
   | None => False
   | Some q' => c < dom CT /\ vpa_mutabilty_runtime_bound_agree q q'
+      (* match (vpa_mutabilty_rs q q') with
+      | q => c < dom CT
+      end *)
   end.
 
 (* Determine whether a static qualifier is assiganble/typable under a runtime qualifeir  *)
@@ -84,6 +137,7 @@ Definition qualifier_typable (qr: q_r) (qs: q): Prop :=
     | Imm => True
     | Rd => True
     | Lost => True
+    (* | RDM => (vpa_mutabilty (q_r_proj qcontext) RDM =? Imm) what's the implication on soundness? *)
     | _ => False
     end
   | Mut_r =>
@@ -91,26 +145,52 @@ Definition qualifier_typable (qr: q_r) (qs: q): Prop :=
     | Mut => True
     | Rd => True
     | Lost => True
+    (* | RDM => true *)
     | _ => False
     end
   end.
 
-(* heap typable is different than environment typable; I sepearate it in the proof but uses the same in the written up *)
-Definition qualifier_typable_heap (qr: q_r) (qs: q): Prop :=
+(* Definition qualifier_typable_context (qr: q_r) (qs: q) (qcontext: q_r): Prop :=
+(* is_q_context qcontext /\ *)
   match qr with
   | Imm_r =>
-    match qs with 
+    match vpa_mutabilty_rs qcontext qs with 
     | Imm => True
     | Rd => True
+    | Lost => True
+    (* | RDM => (vpa_mutabilty (q_r_proj qcontext) RDM =? Imm) what's the implication on soundness? *)
     | _ => False
     end
   | Mut_r =>
-    match qs with
+    match vpa_mutabilty_rs qcontext qs with
     | Mut => True
     | Rd => True
+    | Lost => True
+    (* | RDM => true *)
     | _ => False
     end
-  end.
+  end.   *)
+
+Definition qualifier_typable_heap (qr: q_r) (qs: q): Prop :=
+(* is_q_context qcontext /\ *)
+match qr with
+| Imm_r =>
+  match qs with 
+  | Imm => True
+  | Rd => True
+  | Lost => True
+  (* | RDM => (vpa_mutabilty (q_r_proj qcontext) RDM =? Imm) what's the implication on soundness? *)
+  | _ => False
+  end
+| Mut_r =>
+  match qs with
+  | Mut => True
+  | Rd => True
+  | Lost => True
+  (* | RDM => true *)
+  | _ => False
+  end
+end.
 
 (* Wellformed Runtime Object: an object is well-formed if itself and its fields' type are well formed *)
 Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
@@ -132,6 +212,11 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
             exists rqt, r_type h loc = Some rqt /\
             (rctype rqt) = f_base_type (ftype fdef) /\
             qualifier_typable_heap (rqtype rqt) (vpa_mutabilty_rec_fld (rqtype (rt_type o)) (mutability (ftype fdef)))
+            (* qualified_type_subtype CT 
+              (runtime_type_to_qualified_type rqt)
+              (Build_qualified_type 
+                (mutability (ftype fdef)) 
+                (f_base_type (ftype fdef))) *)
           | None => False
           end
         end) (fields_map o) field_defs
@@ -158,6 +243,19 @@ Definition wf_heap (CT: class_table) (h: heap) : Prop :=
     ι < (List.length h) ->
     wf_obj CT h ι.
 
+(* Wellformed Runtime Typable: the runtime type of the address is subtype of q_this viewpoint adapting the static type *)
+(* Definition wf_r_typable (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (sqt: qualified_type) : Prop :=
+  match r_type h ι,  get_this_var_mapping (rΓ.(vars)) with
+  | Some rqt, Some ι' =>
+    match r_muttype h ι' with
+    | Some q =>
+      (rctype rqt) = (sctype sqt) /\ 
+      qualifier_typable (rqtype rqt) (sqtype sqt)
+    | _ => False
+    end
+  | _, _ => False
+  end. *)
+
 Definition wf_r_typable (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (sqt: qualified_type) : Prop :=
   match r_type h ι with
   | Some rqt =>
@@ -173,6 +271,15 @@ Proof.
   intros CT rΓ1 rΓ2 h loc sqt Hwf.
   exact Hwf.
 Qed.
+
+(* Lemma vpa_qualified_type_sctype : forall q sqt,
+  sctype (vpa_qualified_type q sqt) = sctype sqt.
+Proof.
+  intros.
+  unfold vpa_qualified_type, sctype.
+  destruct sqt.
+  reflexivity.
+Qed. *)
 
 (* Wellformed Runtime Config: if (1) heap is well formed (2) static env is well formed (3) runtime env is well formed (4) the static env and run time env corresponds  *)
 Definition wf_r_config (CT: class_table) (sΓ: s_env) (rΓ: r_env) (h: heap) : Prop :=
@@ -205,9 +312,9 @@ Lemma not_in_both_env: forall CT sΓ rΓ h,
     | None => False
     end -> (forall x, x >= List.length sΓ -> (static_getType sΓ x = None <-> runtime_getVal rΓ x = None)).
 Proof.
-  intros.
-  unfold static_getType in H1.
-  destruct (lt_dec x (List.length sΓ)). 
+intros.
+unfold static_getType in H1.
+destruct (lt_dec x (List.length sΓ)). 
   - (* x < dom sΓ *)
     unfold runtime_getVal.
     rewrite nth_error_None.
@@ -226,6 +333,7 @@ Qed.
 Global Hint Resolve not_in_both_env: rch.
 
 (* ------------------EVALUATION RULES------------------*)
+(* Reserved Notation "'(' rΓ ',' h ')' '⟦'  s  '⟧'   '-->'  '(' rΓ',' h' ')'" (at level 80). *)
 
 (* Evaluation resulting state *)
 
@@ -270,6 +378,7 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
   | SBS_Local : forall CT rΓ h T x,
       runtime_getVal rΓ x = None ->
       eval_stmt OK CT rΓ h (SLocal T x) OK
+      (* (rΓ <|vars := update (List.length rΓ.(vars) + 1) Null_a rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
       (rΓ <|vars := rΓ.(vars)++[Null_a] |> )
       h
 
@@ -278,6 +387,7 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
       runtime_getVal rΓ x = Some v1 ->
       eval_expr OK CT rΓ h e v2 OK rΓ h ->
       eval_stmt OK CT rΓ h (SVarAss x e) OK
+      (* (rΓ <|vars := update x v2 rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
       (rΓ <|vars := update x v2 rΓ.(vars)|>)
       h
 
@@ -285,6 +395,8 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
     runtime_getVal rΓ x = Some v1 ->
     eval_expr OK CT rΓ h e v2 NPE rΓ h ->
     eval_stmt OK CT rΓ h (SVarAss x e) NPE
+    (* (rΓ <|vars := update x v2 rΓ.(vars)|> <|init_state := rΓ.(init_state)|>) *)
+    (* (rΓ <|vars := update x v2 rΓ.(vars)|>) *)
     rΓ'
     h'
 
@@ -294,6 +406,7 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
       runtime_getObj h loc_x = Some o ->
       getVal o.(fields_map) f = Some vf ->
       runtime_getVal rΓ y = Some val_y ->
+      (* can_assign CT rΓ h loc_x f = true -> *) (* Runtime need no check *)
       h' = update_field h loc_x f val_y ->
       eval_stmt OK CT rΓ h (SFldWrite x f y) OK rΓ h'
 
@@ -304,7 +417,11 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
 
   (* evaluate object creation statement *)
   | SBS_New: forall CT rΓ h x (q_c:q_r) c ys vals o rΓ' h',
+      (* runtime_getVal rΓ 0 = Some (Iot l1) -> *)
       runtime_lookup_list rΓ ys = Some vals ->
+      (* r_muttype h l1 = Some qthisr -> *)
+      (* qthis = q_r_proj qthisr -> *)
+      (* q_project_q_r (vpa_mutabilty qthis q_c) = Some qadapted ->  *)
       o = mkObj (mkruntime_type q_c c) (vals) ->
       h' = h++[o] ->
       rΓ' = rΓ <| vars := update x (Iot (dom h)) rΓ.(vars) |> ->
@@ -318,6 +435,7 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
     mstmt = mbody.(mbody_stmt) ->
     mret = mbody.(mreturn) ->
     runtime_lookup_list rΓ zs = Some vals ->
+    (* rΓ' = mkr_env (Iot ly :: vals) rΓ.(init_state) -> *)
     rΓ' = mkr_env (Iot ly :: vals) ->
     eval_stmt OK CT rΓ' h mstmt OK rΓ'' h' ->
     runtime_getVal rΓ'' mret = Some retval ->
@@ -336,6 +454,7 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
     mstmt = mbody.(mbody_stmt) ->
     mret = mbody.(mreturn) ->
     runtime_lookup_list rΓ zs = Some vals ->
+    (* rΓ' = mkr_env (Iot ly :: vals) rΓ.(init_state) -> *)
     rΓ' = mkr_env (Iot ly :: vals) ->
     eval_stmt OK CT rΓ' h mstmt NPE rΓ'' h' ->
     eval_stmt OK CT rΓ h (SCall x m y zs) NPE rΓ'' h'
@@ -356,12 +475,131 @@ Inductive eval_stmt : eval_result -> class_table -> r_env -> heap -> stmt -> eva
       eval_stmt OK CT rΓ h (SSeq s1 s2) NPE rΓ'' h''
 .
 
+(* Note: may need this for future relexed vpa *)
+(* Lemma vpa_qualified_type_preserves_subtype : forall CT q T1 T2,
+  q = Imm \/ q = Mut ->
+  qualified_type_subtype CT T1 T2 ->
+  qualified_type_subtype CT (vpa_qualified_type q T1) (vpa_qualified_type q T2).
+Proof.
+  intros CT q T1 T2 Hq Hsub.
+  induction Hsub.
+  - (* qtype_sub case *)
+    unfold vpa_qualified_type.
+    destruct qt1 as [q1 c1], qt2 as [q2 c2].
+    simpl in *.
+    apply qtype_sub; simpl.
+    + (* Domain constraint for adapted qt1 *)
+      exact H.
+    + (* Domain constraint for adapted qt2 *)
+      exact H0.
+    + (* Mutability subtyping: vpa_mutabilty q q1 ⊑ vpa_mutabilty q q2 *)
+      unfold vpa_mutabilty.
+destruct q.
+* (* q = Rd *)
+  destruct q1; destruct q2; simpl; try assumption;
+  try apply q_rd; try apply q_bot;
+  try (inversion H1; subst; assumption).
+  try apply q_refl. discriminate.
+* (* q = Mut *)
+  destruct q1; destruct q2; simpl; try assumption;
+  try apply q_rd; try apply q_bot; try apply q_refl.
+  all: try assumption;
+     try apply q_refl; try discriminate;
+     try apply q_rd;
+     try apply q_bot;
+     try (exfalso; inversion H1).
+* (* q = Imm *)
+  destruct q1; destruct q2; simpl; try assumption;
+  try apply q_rd; try apply q_bot.
+* (* q = Lost *)
+  destruct q1; destruct q2; simpl; try assumption;
+  try apply q_rd; try apply q_bot.
+  all: try assumption;
+     try apply q_refl; try discriminate;
+     try apply q_rd;
+     try apply q_bot;
+     try (exfalso; inversion H1).
+  destruct Hq as [H_rd_imm | H_rd_mut].
+  -- (* Case: Rd = Imm *)
+    discriminate H_rd_imm.
+  -- (* Case: Rd = Mut *) 
+    discriminate H_rd_mut.
+* (* q = Bot *)
+  destruct q1; destruct q2; simpl.
+  all: try assumption;
+     try apply q_refl; try discriminate;
+     try apply q_rd;
+     try apply q_bot;
+     try (exfalso; inversion H1).
+  destruct Hq as [H_rd_imm | H_rd_mut].
+  -- (* Case: Rd = Imm *)
+    discriminate H_rd_imm.
+  -- (* Case: Rd = Mut *) 
+    discriminate H_rd_mut.   
+* 
+  destruct q1; destruct q2; simpl; try assumption;
+  try apply q_rd; try apply q_bot.
+  all: try assumption;
+     try apply q_refl; try discriminate;
+     try apply q_rd;
+     try apply q_bot;
+     try (exfalso; inversion H1). 
+  + (* Base type subtyping preserved *)
+      exact H2.
+  - (* qtype_trans case *)
+    eapply qtype_trans; [exact IHHsub1 | exact IHHsub2].
+  - (* qtype_refl case *)
+    apply qtype_refl.
+    unfold vpa_qualified_type, sctype.
+    destruct qt; simpl. exact H.
+    unfold vpa_qualified_type.
+    destruct qt as [q_qt c_qt].
+    simpl.
+    unfold vpa_mutabilty.
+    destruct Hq as [Hq_imm | Hq_mut].
+    + (* q = Imm *)
+      subst q.
+      {
+        destruct q_qt; simpl.
+        - (* q_qt = Rd: Rd ≠ Lost *)
+          discriminate.
+        - (* q_qt = Mut: Mut ≠ Lost *)
+          discriminate.
+        - (* q_qt = Imm: Imm ≠ Lost *)
+          discriminate.
+        - (* q_qt = RDM: Imm ≠ Lost *)
+          discriminate.
+        - (* q_qt = Lost: Lost ≠ Lost contradicts H0 *)
+          contradiction H0. reflexivity.
+        - (* q_qt = Bot: Bot ≠ Lost *)
+          discriminate.
+      }
+    + (* q = Mut *)  
+      subst q.
+      (* vpa_mutabilty Mut q_qt *)
+      {
+        destruct q_qt; simpl.
+        - (* q_qt = Rd: Rd ≠ Lost *)
+          discriminate.
+        - (* q_qt = Mut: Mut ≠ Lost *)
+          discriminate.
+        - (* q_qt = Imm: Imm ≠ Lost *)
+          discriminate.
+        - (* q_qt = RDM: Imm ≠ Lost *)
+          discriminate.
+        - (* q_qt = Lost: Lost ≠ Lost contradicts H0 *)
+          contradiction H0. reflexivity.
+        - (* q_qt = Bot: Bot ≠ Lost *)
+          discriminate.
+      }
+Qed. *)
+
 Lemma q_r_proj_imm_or_mut : forall qr,
   q_r_proj qr = Imm \/ q_r_proj qr = Mut.
 Proof.
   intros qr. destruct qr; simpl.
-  -- right; reflexivity.
-  -- left; reflexivity.
+-- right; reflexivity.
+-- left; reflexivity.
 Qed.
 
 Lemma r_type_dom : forall h loc rqt,
@@ -381,7 +619,35 @@ Proof.
     discriminate H.
 Qed.
 
+(* Lemma qualifier_typable_vpa_subtype : forall CT qr q_proj T1 T2 qcontext,
+  (* (sctype T1) < (dom CT) -> *)
+  (* (sctype T2) < (dom CT) -> *)
+  qualified_type_subtype CT T1 T2 ->
+  qualifier_typable qr (vpa_mutabilty q_proj (sqtype T1)) ->
+  qualifier_typable qr (vpa_mutabilty q_proj (sqtype T2)).
+Proof.
+  intros CT qr q_proj T1 T2 Hsub Hqual1.
+  apply qualified_type_subtype_q_subtype in Hsub.
+  unfold qualifier_typable in *.
+  destruct qr as [|].
+  - (* Goal 1: Mut_r case *)
+  unfold vpa_mutabilty in *.
+  destruct T1 as [q1 c1], T2 as [q2 c2].
+  simpl in *.
+  destruct q_proj, q1, q2; simpl in *; auto;
+  try (inversion Hsub; subst; simpl in *; auto).
+
+  - (* Goal 2: Imm_r case *)  
+    unfold vpa_mutabilty in *.
+    destruct T1 as [q1 c1], T2 as [q2 c2].
+    simpl in *.
+    destruct q_proj, q1, q2; simpl in *; auto;
+    try (inversion Hsub; subst; simpl in *; auto).
+Qed. *)
+
 Lemma qualifier_typable_subtype : forall CT qr T1 T2,
+  (* (sctype T1) < (dom CT) ->
+  (sctype T2) < (dom CT) -> *)
   qualified_type_subtype CT T1 T2 ->
   qualifier_typable qr (sqtype T1) ->
   qualifier_typable qr (sqtype T2).
@@ -390,13 +656,17 @@ Proof.
   apply qualified_type_subtype_q_subtype in Hsub.
   unfold qualifier_typable in *.
   destruct qr as [|].
+  (* destruct Hqual1 as [Hisqcontext Htypable]. *)
   - (* Goal 1: Mut_r case *)
+  (* unfold vpa_mutabilty_rs in *. *)
   destruct T1 as [q1 c1], T2 as [q2 c2].
   simpl in *.
   destruct q1, q2; simpl in *; auto;
   try (inversion Hsub; subst; simpl in *; auto).
 
   - (* Goal 2: Imm_r case *)  
+    (* destruct Hqual1 as [Hisqcontext Htypable]. *)
+    (* unfold vpa_mutabilty in *. *)
     destruct T1 as [q1 c1], T2 as [q2 c2].
     simpl in *.
     destruct q1, q2; simpl in *; auto;
@@ -405,6 +675,8 @@ Qed.
 
 (* Subtyping Preservation for wf_r_typable *)
 Lemma wf_r_typable_subtype : forall CT rΓ h loc T1 T2,
+  (* sctype T1 < dom CT -> *)
+  (* sctype T2 < dom CT -> *)
   wf_heap CT h ->
   wf_r_typable CT rΓ h loc T1 ->
   qualified_type_subtype CT T1 T2 ->
@@ -413,12 +685,16 @@ Proof.
   intros CT rΓ h loc T1 T2 hwfheap Hwf Hsub.
   unfold wf_r_typable in *.
   destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
+  (* destruct (get_this_var_mapping (vars rΓ)) as [ι'|] eqn:Hthis; [|contradiction]. *)
+  (* destruct (r_muttype h ι') as [q|] eqn:Hmut; [|contradiction]. *)
   split.
 - (* Base type equality *)
   destruct Hwf as [Hbase _].
   apply qualified_type_subtype_base_subtype in Hsub.
+  (* Without inheritance, base_subtype should only be reflexivity *)
   inversion Hsub; subst.
   exact Hbase.
+  (* apply qualified_type_subtype_base_subtype in Hsub. *)
   - destruct Hwf as [_ Hqualifier]. 
   eapply qualifier_typable_subtype; [ exact Hsub | exact Hqualifier].
 Qed.
@@ -458,6 +734,7 @@ Proof.
 Qed.
 
 (* evaluate program *)
+(* Critical missing lemmas for type soundness *)
 
 (* 1. Static-Runtime Correspondence Lemmas *)
 Lemma runtime_lookup_list_preserves_length : forall rΓ args vals,
@@ -586,7 +863,21 @@ Proof.
     }
     rewrite heap_extension_preserves_objects; assumption.
   }
+  
+  (* assert (Hmut_ext : r_muttype (h ++ [obj]) ι' = Some q).
+  {
+    unfold r_muttype in *.
+    assert (Hι'_dom : ι' < dom h).
+    {
+      unfold r_muttype in Hmut.
+      destruct (runtime_getObj h ι') as [o|] eqn:Hobj; [|discriminate].
+      apply runtime_getObj_dom in Hobj. exact Hobj.
+    }
+    rewrite heap_extension_preserves_objects; assumption.
+  } *)
+  
   rewrite Hrtype_ext.
+  (* rewrite Hmut_ext. *)
   exact Hwf.
 Qed.
 
@@ -745,6 +1036,45 @@ Proof.
   unfold vpa_assignability in Hvpa.
   destruct q, a; simpl in Hvpa; try discriminate; auto.
 Qed.
+
+(* Lemma vpa_type_to_type_imm_cases : forall q1 q2,
+  vpa_mutabilty q1 q2 = Imm ->
+  (q2 = Imm) \/
+  (q1 = Imm /\ q2 = RDM).
+Proof.
+  intros q1 q2 Hvpa.
+  unfold vpa_mutabilty in Hvpa.
+  destruct q1, q2; simpl in Hvpa; try discriminate; auto.
+Qed.
+
+Lemma vpa_type_to_type_mut_cases : forall q1 q2,
+  vpa_mutabilty q1 q2 = Mut ->
+  (q2 = Mut) \/
+  (q1 = Mut /\ q2 = RDM).
+Proof.
+  intros q1 q2 Hvpa.
+  unfold vpa_mutabilty in Hvpa.
+  destruct q1, q2; simpl in Hvpa; try discriminate; auto.
+Qed.
+
+Lemma vpa_type_to_type_rdm_cases : forall q1 q2,
+  vpa_mutabilty q1 q2 = RDM ->
+  (q1 = RDM /\ q2 = RDM).
+Proof.
+  intros q1 q2 Hvpa.
+  unfold vpa_mutabilty in Hvpa.
+  destruct q1, q2; simpl in Hvpa; try discriminate; auto.
+Qed. *)
+
+(* Lemma vpa_type_to_type_bot_cases : forall q1 q2,
+  vpa_mutabilty q1 q2 = Bot ->
+  (q2 = Bot) \/
+  (q1 = Bot /\ q2 = RDM).
+Proof.
+  intros q1 q2 Hvpa.
+  unfold vpa_mutabilty in Hvpa.
+  destruct q1, q2; simpl in Hvpa; try discriminate; auto.
+Qed. *)
 
 (* Expression Evaluation Preservation *)
 Lemma expr_eval_preservation : forall CT sΓ rΓ h e v rΓ' h' T,
@@ -936,7 +1266,9 @@ Proof.
       - exact Hcollect.
       - exact Hfdef_lookup.
     }
-
+    
+    (* Now we need to connect (sctype T0) with (rctype (rt_type o)) *)
+    (* This should come from the fact that x has type T0 and points to object o *)
     (* Use wf_r_typable for x *)
     assert (Hx_wf : wf_r_typable CT rΓ h v T0).
     {
@@ -951,6 +1283,9 @@ Proof.
     unfold r_type in Hx_wf.
     rewrite H0 in Hx_wf.
     simpl in Hx_wf.
+    (* rewrite Hthis in Hx_wf. *)
+    (* rewrite Hmut in Hx_wf. *)
+    (* destruct Hx_wf as [Hx_base Hx_qualifier]. *)
     eapply field_lookup_deterministic_rel.
     - exact Hfield_lookup_o.
     - destruct Hx_wf as [Hbase _].
@@ -960,14 +1295,25 @@ Proof.
   subst fdef.
     split.
   -- (* Base subtyping *)
+    (* rewrite vpa_type_to_type_sctype. *)
     simpl.
     destruct Hsubtype as [Hbasesubtyp _].
     exact Hbasesubtyp.
+    (* apply (qualified_type_subtype_base_subtype CT 
+      (runtime_type_to_qualified_type rqt)
+      {| sqtype := (mutability (ftype fDef)); 
+        sctype := f_base_type (ftype fDef) |}).
+    + exact Hsubtype. *)
   -- (* Qualifier typability *)
   destruct Hsubtype as [Hbasesubtyp Hqualifiertypable].
-  unfold qualifier_typable.
-  destruct (rqtype rqt) eqn: Hrqttype;
-  destruct (sqtype T0) eqn: HsqtypeT0;
+  (* apply qualified_type_subtype_q_subtype in Hsubtype.
+unfold runtime_type_to_qualified_type in Hsubtype.
+simpl in Hsubtype.
+unfold vpa_type_to_type.
+unfold qualifier_typable. *)
+unfold qualifier_typable.
+destruct (rqtype rqt) eqn: Hrqttype;
+ destruct (sqtype T0) eqn: HsqtypeT0;
   destruct (mutability (ftype fDef)) eqn: Hfieldqualifier;
   simpl in *; auto;
   try (inversion Hsubtype; auto);
@@ -984,30 +1330,175 @@ Proof.
   all: try have H7copy := H7; try apply static_getType_dom in H7.
   all: try unfold static_getType in H7copy.
   all: try specialize (Hcorr x H7 {|
-  sqtype := Imm; sctype :=
-  c0
-  |} H7copy).
-  all: try specialize (Hcorr x H7 {|
-  sqtype := RDM; sctype :=
-  c0
-  |} H7copy).
-  all: try specialize (Hcorr x H7 {|
-  sqtype := Bot; sctype :=
-  c0
-  |} H7copy).
-  all: try specialize (Hcorr x H7 {|
-  sqtype := Mut; sctype :=
-  c0
-  |} H7copy).
-  all: try rewrite H in Hcorr.
-  all: try unfold wf_r_typable in Hcorr.
-  all: try unfold r_type in Hcorr.
-  all: try rewrite H0 in Hcorr.
-  all: try destruct Hcorr as [Hobasetype Hoqualifier].
-  all: try simpl in Hoqualifier.
-  all: try rewrite HreceiverRuntimeQualifier in Hoqualifier.
-  all: try unfold qualifier_typable in Hoqualifier.
-  all: try unfold vpa_mutabilty_rs; try easy.
+sqtype := Imm; sctype :=
+c0
+|} H7copy).
+all: try specialize (Hcorr x H7 {|
+sqtype := RDM; sctype :=
+c0
+|} H7copy).
+all: try specialize (Hcorr x H7 {|
+sqtype := Bot; sctype :=
+c0
+|} H7copy).
+all: try specialize (Hcorr x H7 {|
+sqtype := Mut; sctype :=
+c0
+|} H7copy).
+all: try rewrite H in Hcorr.
+all: try unfold wf_r_typable in Hcorr.
+all: try unfold r_type in Hcorr.
+all: try rewrite H0 in Hcorr.
+all: try destruct Hcorr as [Hobasetype Hoqualifier].
+all: try simpl in Hoqualifier.
+all: try rewrite HreceiverRuntimeQualifier in Hoqualifier.
+all: try unfold qualifier_typable in Hoqualifier.
+all: try unfold vpa_mutabilty_rs; try easy.
+
+(* destruct (rqtype rqt) as [|]; destruct (sqtype T0); 
+  destruct (mutability (ftype fDef));
+  simpl in *; auto;
+  try (inversion Hsubtype; auto).
+  simpl.
+
+   *)
+    (* unfold vpa_type_to_type.
+    destruct (rqtype rqt) as [|] eqn: rq.
+    all: try destruct (vpa_mutabilty (q_r_proj q)) as [] eqn:qadapted.
+    unfold qualifier_typable; reflexivity.
+    3:{unfold qualifier_typable; reflexivity.
+    }
+    3:{unfold qualifier_typable; reflexivity.
+    }
+    5:{unfold qualifier_typable; reflexivity.
+    }
+    6:{unfold qualifier_typable; reflexivity.
+    }
+    6:{unfold qualifier_typable; reflexivity.
+    }
+    (* exfalso. *)
+    destruct T0 as [sqt0 sct0].
+    simpl in qadapted.
+    unfold vpa_mutabilty in qadapted.
+    destruct (q_r_proj q) eqn: qprojr; try discriminate qadapted.
+    destruct sqt0 eqn: sqttest.
+    all: try destruct (mutability (ftype fDef)) eqn: qf.
+    all: try discriminate.
+    all: try
+    apply qualified_type_subtype_q_subtype in Hsubtype;
+    try unfold runtime_type_to_qualified_type in Hsubtype;
+    try simpl in Hsubtype;
+    try rewrite rq in Hsubtype;
+    try simpl in Hsubtype;
+    (* Now Hsubtype : Mut ⊑ Imm *)
+    try inversion Hsubtype; try subst.
+    all: try
+    apply qualified_type_subtype_q_subtype in Hsubtype;
+    simpl in Hsubtype.
+    all: try unfold runtime_type_to_qualified_type; simpl.
+    all: try apply qualified_type_subtype_dom2 in H3.
+    all: try simpl H3; try exact H3.
+
+    all: try
+    unfold wf_heap in Hwf_heap;
+    try assert (Hloc_dom : loc < dom h) by (apply runtime_getObj_dom in Hloc_obj; exact Hloc_obj);
+    try apply Hwf_heap in Hloc_dom;
+    try unfold wf_obj in Hloc_dom;
+    try rewrite Hloc_obj in Hloc_dom;
+    try destruct Hloc_dom as [Hwf_rtype _];
+    try unfold wf_rtypeuse in Hwf_rtype;
+    try destruct (bound CT (rctype (rt_type o_loc))) eqn: boundtest;
+    assert (Hrqt_eq : rqt = rt_type o_loc) by (unfold r_type in Hrtype_loc; rewrite Hloc_obj in Hrtype_loc; injection Hrtype_loc; auto);
+    try rewrite Hrqt_eq;
+    try exact Hwf_rtype.
+
+    all: try destruct sqt0 eqn: sqttest;
+    try discriminate qadapted.
+    all: try destruct T0 eqn: T0test; simpl in qadapted;
+    try destruct vpa_mutabilty eqn: vpa_test;
+    try discriminate qadapted.
+    all: try easy.
+    all: try rewrite <- H2; try rewrite Hrqt_eq; try exact Hwf_rtype.
+    {
+      apply vpa_type_to_type_rdm_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Mut) in vpa_test.
+      destruct vpa_test as [H_mut  H_rdm].
+      destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_rdm_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Rd) in vpa_test.
+      destruct vpa_test as [H_mut  H_rdm].
+      destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_bot_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Mut) in vpa_test.
+      destruct vpa_test as [H_mut | [H_q_mut H_rdm]].
+      - (* Case: vpa_mutabilty sqtype Imm = Mut *)
+        unfold vpa_mutabilty in H_mut.
+        destruct sqtype; discriminate H_mut.
+      - (* Case: q_r_proj q = Mut /\ vpa_mutabilty sqtype Imm = RDM *)
+        unfold vpa_mutabilty in H_rdm.
+        destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_bot_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Rd) in vpa_test.
+      destruct vpa_test as [H_mut | [H_q_mut H_rdm]].
+      - (* Case: vpa_mutabilty sqtype Imm = Mut *)
+        unfold vpa_mutabilty in H_mut.
+        destruct sqtype; discriminate H_mut.
+      - (* Case: q_r_proj q = Mut /\ vpa_mutabilty sqtype Imm = RDM *)
+        unfold vpa_mutabilty in H_rdm.
+        destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_mut_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Imm) in vpa_test.
+      destruct vpa_test as [H_mut | [H_q_mut H_rdm]].
+      - (* Case: vpa_mutabilty sqtype Imm = Mut *)
+        unfold vpa_mutabilty in H_mut.
+        destruct sqtype; discriminate H_mut.
+      - (* Case: q_r_proj q = Mut /\ vpa_mutabilty sqtype Imm = RDM *)
+        unfold vpa_mutabilty in H_rdm.
+        destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_mut_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Rd) in vpa_test.
+      destruct vpa_test as [H_mut | [H_q_mut H_rdm]].
+      - (* Case: vpa_mutabilty sqtype Imm = Mut *)
+        unfold vpa_mutabilty in H_mut.
+        destruct sqtype; discriminate H_mut.
+      - (* Case: q_r_proj q = Mut /\ vpa_mutabilty sqtype Imm = RDM *)
+        unfold vpa_mutabilty in H_rdm.
+        destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_rdm_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Imm) in vpa_test.
+      destruct vpa_test as [H_mut  H_rdm].
+      destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_rdm_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Rd) in vpa_test.
+      destruct vpa_test as [H_mut  H_rdm].
+      destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_bot_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Imm) in vpa_test.
+      destruct vpa_test as [H_mut | [H_q_mut H_rdm]].
+      - (* Case: vpa_mutabilty sqtype Imm = Mut *)
+        unfold vpa_mutabilty in H_mut.
+        destruct sqtype; discriminate H_mut.
+      - (* Case: q_r_proj q = Mut /\ vpa_mutabilty sqtype Imm = RDM *)
+        unfold vpa_mutabilty in H_rdm.
+        destruct sqtype; discriminate H_rdm.
+    }
+    {
+      apply vpa_type_to_type_bot_cases with (q1:=q_r_proj q)(q2:=vpa_mutabilty sqtype Rd) in vpa_test.
+      destruct vpa_test as [H_mut | [H_q_mut H_rdm]].
+      - (* Case: vpa_mutabilty sqtype Imm = Mut *)
+        unfold vpa_mutabilty in H_mut.
+        destruct sqtype; discriminate H_mut.
+      - (* Case: q_r_proj q = Mut /\ vpa_mutabilty sqtype Imm = RDM *)
+        unfold vpa_mutabilty in H_rdm.
+        destruct sqtype; discriminate H_rdm.
+    } *)
   *  exfalso.
     exact Hforall2.
   - exfalso. inversion Hevalcopy.

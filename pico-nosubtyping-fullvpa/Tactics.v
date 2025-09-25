@@ -1,5 +1,7 @@
+(* Celsius project *)
+(* Clément Blaudeau - Lamp@EPFL & Inria 2020-2022 *)
 (* ------------------------------------------------------------------------ *)
-(* Adapted from Celsius project : https://github.com/clementblaudeau/celsius *)
+(* Adapted from SystemFR project : https://github.com/epfl-lara/SystemFR *)
 Require Export String List Psatz Coq.Program.Tactics Arith.
 Import ListNotations.
 

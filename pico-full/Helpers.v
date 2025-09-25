@@ -1,3 +1,6 @@
+(* ------------------------------------------------------------------------ *)
+(* Adapted from Celsius project : https://github.com/clementblaudeau/celsius *)
+
 Require Export Syntax.
 Require Export List.
 Import ListNotations.

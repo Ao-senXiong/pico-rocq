@@ -30,6 +30,35 @@ Proof.
     inversion H0; eauto with typ lia.
 Qed.
 Global Hint Resolve q_subtype_trans: typ.
+  
+(* Java base type subtyping *)
+(* Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
+  | base_refl : forall (CT : class_table) (C : class_name),
+      (* Reflexivity of base subtyping *)
+      C < dom CT ->
+      base_subtype CT C C
+  | base_trans : forall (CT : class_table) (C D E : class_name),
+      base_subtype CT C D ->
+      base_subtype CT D E -> 
+      base_subtype CT C E
+  | base_extends : forall (CT : class_table) (C D : class_name),
+      C < dom CT ->
+      D < dom CT ->
+      parent_lookup CT C = Some D ->
+      base_subtype CT C D.
+Global Hint Constructors base_subtype: typ. *)
+
+
+(* Inductive base_subtype_strict : class_table -> class_name -> class_name -> Prop :=
+  | base_trans_strict : forall (CT : class_table) (C D E : class_name),
+      base_subtype_strict CT C D ->
+      base_subtype_strict CT D E -> 
+      base_subtype_strict CT C E
+  | base_extends_strict : forall (CT : class_table) (C D : class_name),
+      C < dom CT ->
+      D < dom CT ->
+      parent_lookup CT C = Some D ->
+      base_subtype_strict CT C D. *)
 
 (* Qualified type subtyping *)
 Inductive qualified_type_subtype : class_table -> qualified_type -> qualified_type -> Prop :=
@@ -38,6 +67,7 @@ Inductive qualified_type_subtype : class_table -> qualified_type -> qualified_ty
       (sctype qt2) < (dom CT) ->
       q_subtype (sqtype qt1) (sqtype qt2) ->
       sctype qt1 = sctype qt2 ->
+      (* base_subtype CT (sctype qt1) (sctype qt2) -> *)
       qualified_type_subtype CT qt1 qt2
   | qtype_trans: forall CT qt1 qt2 qt3,
       qualified_type_subtype CT qt1 qt2 ->
@@ -83,8 +113,11 @@ Proof.
     generalize dependent qt2.
     - intros. exact H2.
     - lia. 
+    (* eapply base_trans; eauto.  *)
     - 
       reflexivity.
+			(* intros. apply base_refl.
+			exact H. *)
 Qed.
 
 Lemma qualified_type_subtype_q_subtype :

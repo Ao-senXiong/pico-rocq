@@ -13,6 +13,7 @@ From RecordUpdate Require Import RecordUpdate.
 Definition gget {X: Type} (l : list X)  : Loc -> option X := nth_error l.
 Definition runtime_getObj (l : heap)    : Loc -> option Obj := nth_error l.
 Definition getVal (l : list value)  : Loc -> option value := nth_error l.
+(* Definition getAVal (l : list (r_a * value) )  : Loc -> option (r_a * value) := nth_error l. *)
 Definition runtime_getVal (rΓ : r_env): Loc -> option value := nth_error (rΓ.(vars)).
 Definition static_getType (sΓ: s_env): Loc -> option qualified_type := nth_error sΓ.
 
@@ -115,7 +116,7 @@ Fixpoint update {X : Type} (position : nat) (value : X) (l : list X) : list X :=
   end.
 Notation "[ x ↦  v ] l" := (update x v l) (at level 0).
 
-Definition update_r_env_value (rΓ : r_env) (l : Loc) (v : value) : r_env :=
+Fixpoint update_r_env_value (rΓ : r_env) (l : Loc) (v : value) : r_env :=
   match rΓ with
   {| vars := vars; |} => 
       {| vars := update l v vars;|}
@@ -884,6 +885,13 @@ Definition bound (CT : class_table) (C : class_name) : option q_c :=
   | Some decl => Some (class_qualifier (signature decl))
   | None => None
   end.
+
+(* Parent class lookup in the class table *)
+(* Definition parent_lookup (CT : class_table) (C : class_name) : option class_name :=
+  match find_class CT C with
+  | Some def => super (signature def)
+  | None => None
+  end. *)
 
 Lemma bound_some_dom : forall CT C q,
   bound CT C = Some q -> C < dom CT.

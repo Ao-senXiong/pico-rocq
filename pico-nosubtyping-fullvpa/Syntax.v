@@ -13,6 +13,7 @@ Inductive q : Type :=
   (* q_c *)
   | Mut
   | Imm
+  | RDM
   (* q_f *)
   | Rd
   (* q_h *)
@@ -35,11 +36,22 @@ Inductive q_c : Type :=
   | Imm_c
   | RDM_c.
 
+(* Definition is_q_c (x : q) : Prop := x = Mut \/ x = Imm \/ x = RDM. *)
+(* Definition is_q_c (x : q) : Prop := x = Mut \/ x = Imm. use without RDM first, otherwise need to restrict the main method to be immut/mut only *)
+(* Definition is_q_context (x : q) : Prop := x = Mut \/ x = Imm. *)
+(* Definition is_q_f (x : q) : Prop := x = Rd \/ x = Mut \/ x = Imm. *)
+(* Definition is_q_h (x : q) : Prop := x = Lost \/ x = Bot. *)
+
 (* Assignability qualifier *)
 Inductive a : Type :=
   | Assignable
   | Final
   | RDA.
+
+(* Definition r_a := { x : a | x = Assignable \/ x = Final}. *)
+
+(* Canonical projection for assignability *)
+(* Definition r_a_proj (x : r_a) : a := proj1_sig x. *)
 
 (* Qualified type  *)
 Record qualified_type := {
@@ -116,6 +128,7 @@ Record class_body := {
 Record class_sig := {
   class_qualifier : q_c; (* Mutable, Immutable, or RDM *)
   cname : class_name; (* Class name, need to be the same as the index from class_table *)
+  (* super : option class_name; Superclass name *)
 }.
 
 Record class_def := {
@@ -133,18 +146,24 @@ Definition class_table := list class_def.
 
 (* ------------------RUNTIME MODEL------------------*)
 
+(* Initialization state *)
+(* Inductive init: Type := 
+  | initing
+  | inited. *)
+
 (* Runtime mutability type *)
 Inductive q_r : Type :=
+  (* q_c *)
   | Mut_r
   | Imm_r
   .
 (* Definition q_r := { x : q | x = Mut \/ x = Imm }. *)
 
 Definition q_r_proj (x : q_r) : q := 
-  match x with
-  | Mut_r => Mut
-  | Imm_r => Imm
-  end.
+match x with
+| Mut_r => Mut
+| Imm_r => Imm
+end.
 
 Definition q_project_q_r (q : q) : option q_r :=
   match q with
@@ -178,6 +197,8 @@ Definition var_mapping   := list value.
 
 Record r_env := mkr_env {
   vars: var_mapping; (* Variable mapping *)
+  (* Initialization state *)
+  (* init_state: init; *)
 }.
 
 (* Runtime object *)
@@ -187,3 +208,15 @@ Record Obj := mkObj {
 }.
 
 Definition heap          := list Obj.
+
+(* AOSEN: just a test *)
+(* Instance settable_r_env : Settable _ :=
+  mkSettable (generate_setters mkr_env vars init_state). *)
+Record test := mktest {
+  abc: nat;
+  bcd: nat;
+}.
+
+Definition example_env := mktest 42 1.
+
+Definition updated_env := example_env <|abc := 100|>.

@@ -1,4 +1,5 @@
 (* ------------------------------------------------------------------------ *)
+(* Adapted from Celsius project : https://github.com/clementblaudeau/celsius *)
 (** ** Non-overloaded notations *)
 
 (* Typing *)
