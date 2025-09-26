@@ -1,7 +1,6 @@
 Require Import Syntax.
 
 (* Viewpoint adaptation of mutability qualifiers *)
-
 Definition vpa_mutabilty_bound (q1: q)(q2 : q_c) : q :=
   match q1, q2 with
     | Rd, RDM_c => Lost
@@ -12,7 +11,6 @@ Definition vpa_mutabilty_bound (q1: q)(q2 : q_c) : q :=
 
 Definition vpa_mutabilty_fld_bound (q1: q_f)(q2 : q_c) : q_f :=
   match q1, q2 with
-    (* | Rd_f, RDM_c => Lost *)
     | Imm_f, RDM_c => Imm_f
     | Mut_f, RDM_c => Mut_f
     | RDM_f, RDM_c => RDM_f

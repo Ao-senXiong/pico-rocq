@@ -5,18 +5,11 @@ Import ListNotations.
 Require Import Arith.
 
 (* STATIC HELPER FUNCTIONS *)
-
 Inductive CollectFields : class_table -> class_name -> list field_def -> Prop :=
   (* Base case: class not found *)
   | CF_NotFound : forall CT C,
       find_class CT C = None ->
       CollectFields CT C []
-      
-  (* Base case: Object class (no superclass) *)
-  (* | CF_Object : forall CT C def,
-      find_class CT C = Some def ->
-      super (signature def) = None ->
-      CollectFields CT C [] *)
       
   (* Inductive case: class with superclass *)
   | CF_Body : forall CT C def own_fields,
@@ -80,167 +73,6 @@ Proof.
   subst. rewrite Hget1 in Hget2. injection Hget2. auto.
 Qed.
 
-(* Lemma field_inheritance_preserves_type : forall CT C parent def f fdef,
-  find_class CT C = Some def ->
-  super (signature def) = Some parent ->
-  FieldLookup CT parent f fdef ->
-  FieldLookup CT C f fdef.
-Proof.
-  intros CT C parent def f fdef Hfind Hsuper Hparent_lookup.
-  inversion Hparent_lookup as [CT' parent' parent_fields f' fdef' Hparent_cf Hparent_get]. subst.
-  apply FL_Found with (parent_fields ++ Syntax.fields (body def)).
-  - eapply CF_Inherit; eauto.
-  - (* Prove gget (parent_fields ++ Syntax.fields (body def)) f = Some fdef *)
-    unfold gget in *.
-    rewrite nth_error_app1.
-    + apply nth_error_Some. rewrite Hparent_get. discriminate.
-    + exact Hparent_get.
-Qed. *)
-
-(* Transitive field inheritance via subtyping *)
-(* Lemma field_inheritance_subtyping : forall CT C D f fdef,
-  base_subtype CT C D ->
-  FieldLookup CT D f fdef ->
-  FieldLookup CT C f fdef.
-Proof.
-  intros CT C D f fdef Hsub Hlookup.
-  induction Hsub.
-  - (* Reflexivity: C = D *)
-    exact Hlookup.
-  - (* Transitivity: C <: E <: D *)
-    apply IHHsub1.
-    apply IHHsub2.
-    exact Hlookup.
-  - (* Direct inheritance: C extends D *)
-    destruct (find_class CT C) as [def|] eqn:Hfind.
-    apply (field_inheritance_preserves_type CT C D def f fdef); auto.
-    unfold parent_lookup in H1.
-    rewrite Hfind in H1.
-    simpl in H1.
-    exact H1.
-    unfold parent_lookup in H1.
-    rewrite Hfind in H1.
-    discriminate H1.
-Qed. *)
-
-(* Lemma field_def_consistent_through_subtyping : forall CT C D f fdef1 fdef2,
-  base_subtype CT C D ->
-  FieldLookup CT C f fdef1 ->
-  FieldLookup CT D f fdef2 ->
-  fdef1 = fdef2.
-Proof.
-  intros CT C D f fdef1 fdef2 Hsub Hlookup1 Hlookup2.
-  (* Use field inheritance: since C <: D, field f in D is also in C *)
-  assert (Hlookup2_in_C : FieldLookup CT C f fdef2).
-  {
-    apply (field_inheritance_subtyping CT C D f fdef2); assumption.
-  }
-  (* Now both lookups are in C, so use determinism *)
-  eapply field_lookup_deterministic_rel; eauto.
-Qed. *)
-
-(* Corollary for all field properties *)
-(* Lemma sf_def_subtyping : forall CT C D f fdef,
-  base_subtype CT C D ->
-  sf_def_rel CT D f fdef ->
-  sf_def_rel CT C f fdef.
-Proof.
-  intros CT C D f fdef Hsub Hlookup.
-  unfold sf_def_rel in *.
-  apply (field_inheritance_subtyping CT C D f fdef); auto.
-Qed.
-
-Lemma sf_def_subtyping_reverse : forall CT C D f fdef,
-  base_subtype CT C D ->
-  sf_def_rel CT C f fdef ->
-  sf_def_rel CT D f fdef \/ ~(exists fdef', sf_def_rel CT D f fdef').
-Proof.
-  intros CT C D f fdef Hsub Hlookup.
-  unfold sf_def_rel in *.
-  (* Use classical reasoning on the existence of field in D *)
-  destruct (classic (exists fdef', FieldLookup CT D f fdef')) as [Hexists | Hnotexists].
-  - (* Field exists in D *)
-    destruct Hexists as [fdef' Hlookup_D].
-    left.
-    (* Use consistency: if field exists in both C and D, they must be the same *)
-    assert (Hfdef_eq : fdef = fdef').
-    {
-      eapply field_def_consistent_through_subtyping; eauto.
-    }
-    subst fdef'.
-    exact Hlookup_D.
-  - (* Field doesn't exist in D *)
-    right.
-    exact Hnotexists.
-Qed.
-
-Lemma sf_assignability_subtyping_reverse : forall CT C D f a,
-  base_subtype CT C D ->
-  sf_assignability_rel CT C f a ->
-  sf_assignability_rel CT D f a \/ ~(exists a0, sf_assignability_rel CT D f a0).
-Proof.
-  intros CT C D f a Hsub Hassign_C.
-  unfold sf_assignability_rel in *.
-  destruct Hassign_C as [fdef [Hfield_C Hassign]].
-  
-  (* Use classical reasoning on field existence in D *)
-  destruct (classic (exists fdef', FieldLookup CT D f fdef')) as [Hexists | Hnotexists].
-  - (* Field exists in D *)
-    destruct Hexists as [fdef' Hfield_D].
-    left.
-    (* Use field consistency to show fdef = fdef' *)
-    assert (Hfdef_eq : fdef = fdef').
-    {
-      eapply field_def_consistent_through_subtyping; eauto.
-    }
-    subst fdef'.
-    exists fdef.
-    split; [exact Hfield_D | exact Hassign].
-  - (* Field doesn't exist in D *)
-    right.
-    intro Hcontra.
-    destruct Hcontra as [a0 [fdef' [Hfield_D' _]]].
-    apply Hnotexists.
-    exists fdef'.
-    exact Hfield_D'.
-Qed.
-
-Lemma sf_assignability_subtyping : forall CT C D f a,
-  base_subtype CT C D ->
-  sf_assignability_rel CT D f a ->
-  sf_assignability_rel CT C f a.
-Proof.
-  intros CT C D f a Hsub Hlookup.
-  unfold sf_assignability_rel in *.
-  destruct Hlookup as [fdef [Hfield Hassign]].
-  exists fdef. split; auto.
-  apply (sf_def_subtyping CT C D f fdef); auto.
-Qed.
-
-Lemma sf_mutability_subtyping : forall CT C D f q,
-  base_subtype CT C D ->
-  sf_mutability_rel CT D f q ->
-  sf_mutability_rel CT C f q.
-Proof.
-  intros CT C D f q Hsub Hlookup.
-  unfold sf_mutability_rel in *.
-  destruct Hlookup as [fdef [Hfield Hmut]].
-  exists fdef. split; auto.
-  apply (sf_def_subtyping CT C D f fdef); auto.
-Qed.
-
-Lemma sf_base_subtyping : forall CT C D f base,
-  base_subtype CT C D ->
-  sf_base_rel CT D f base ->
-  sf_base_rel CT C f base.
-Proof.
-  intros CT C D f base Hsub Hlookup.
-  unfold sf_base_rel in *.
-  destruct Hlookup as [fdef [Hfield Hbase]].
-  exists fdef. split; auto.
-  apply (sf_def_subtyping CT C D f fdef); auto.
-Qed. *)
-
 Lemma sf_assignability_deterministic_rel : forall CT C f a1 a2,
   sf_assignability_rel CT C f a1 ->
   sf_assignability_rel CT C f a2 ->
@@ -262,132 +94,6 @@ Proof.
   rewrite -> Hassign1 in Hassign2.
   exact Hassign2.
 Qed.
-
-(* Collect fields of a class and its superclasses, with fuel to prevent infinite loops *)
-(* Fixpoint collect_fields_fuel (fuel : nat) (CT : class_table) (C : class_name) : list field_def :=
-  match fuel with
-  | O => []
-  | S fuel' =>
-    match find_class CT C with
-    | None => []
-    | Some def =>
-      let super_fields :=
-        match super (signature def) with
-        | Some n => collect_fields_fuel fuel' CT n
-        | None => []
-        end in
-      super_fields ++ fields (body def)
-    end
-  end.
-
-Definition collect_fields (CT : class_table) (C : class_name) : list field_def :=
-collect_fields_fuel (length CT) CT C.
-
-Definition fields := collect_fields.
-
-Lemma collect_fields_fuel_zero : forall CT C,
-  collect_fields_fuel 0 CT C = [].
-Proof.
-  intros CT C.
-  simpl.
-  reflexivity.
-Qed.
-
-Lemma collect_fields_fuel_no_class : forall fuel CT C,
-  find_class CT C = None ->
-  collect_fields_fuel fuel CT C = [].
-Proof.
-  intros fuel CT C Hno_class.
-  destruct fuel as [|fuel'].
-  - simpl. reflexivity.
-  - simpl. rewrite Hno_class. reflexivity.
-Qed.
-
-Lemma collect_fields_fuel_structure : forall fuel' CT C def,
-  find_class CT C = Some def ->
-  collect_fields_fuel (S fuel') CT C = 
-    (match super (signature def) with
-     | Some parent => collect_fields_fuel fuel' CT parent
-     | None => []
-     end) ++ Syntax.fields (body def).
-Proof.
-  intros fuel' CT C def Hfind.
-  simpl. rewrite Hfind. 
-  destruct (super (signature def)) as [parent|].
-  + reflexivity.
-  + simpl. reflexivity.
-Qed.
-
-Lemma collect_fields_fuel_inherits_parent : forall fuel CT C def parent f fdef,
-  find_class CT C = Some def ->
-  super (signature def) = Some parent ->
-  fuel > 0 ->
-  nth_error (collect_fields_fuel fuel CT parent) f = Some fdef ->
-  nth_error (collect_fields_fuel (S fuel) CT C) f = Some fdef.
-Proof.
-  intros fuel CT C def parent f fdef Hfind Hsuper Hfuel Hparent_field.
-  simpl.
-  rewrite Hfind.
-  rewrite Hsuper.
-  (* First prove the length bound *)
-  assert (Hbound : f < length (collect_fields_fuel fuel CT parent)).
-  {
-    apply nth_error_Some.
-    rewrite Hparent_field.
-    discriminate.
-  }
-  rewrite nth_error_app1.
-  - exact Hbound.
-  - exact Hparent_field.
-Qed.
-
-(* Static field def look up; We assume identifiers are globally unique  *)
-Definition sf_def (CT: class_table) (C: class_name) (f: var) : option field_def :=
-  gget (fields CT C) f.
-
-(* Static field assignablity lookup *)
-Definition sf_assignability (CT: class_table) (C: class_name) (f: var) : option a :=
-  match sf_def CT C f with
-  | Some fd => Some (assignability (ftype fd))
-  | None => None
-  end.
-
-(* Static field mutability lookup *)
-Definition sf_mutability (CT: class_table) (C: class_name) (f: var) : option q_f :=
-  match sf_def CT C f with
-  | Some fd => Some (mutability (ftype fd))
-  | None => None
-  end.
-
-(* Static field base type lookup *)
-Definition sf_base (CT: class_table) (C: class_name) (f: var) : option class_name :=
-  match sf_def CT C f with
-  | Some fd => Some (f_base_type (ftype fd))
-  | None => None
-  end.
-
-Lemma field_lookup_deterministic : forall CT C f fdef fdef',
-  sf_def CT C f = Some fdef ->
-  sf_def CT C f = Some fdef' ->
-  fdef = fdef'.
-Proof.
-  intros CT C f fdef fdef' H1 H2.
-  unfold sf_def in *.
-  rewrite H1 in H2.
-  injection H2.
-  auto.
-Qed.
-
-(* Fields collection is deterministic *)
-Lemma collect_fields_deterministic : forall CT C fds fds',
-  collect_fields CT C = fds ->
-  collect_fields CT C = fds' ->
-  fds = fds'.
-Proof.
-  intros CT C fds fds' H1 H2.
-  rewrite H1 in H2.
-  exact H2.
-Qed.  *)
 
 (* Look up the constructor for a class *)
 Definition constructor_def_lookup (CT : class_table) (C : class_name) : option constructor_def :=
@@ -488,12 +194,6 @@ Inductive CollectMethods : class_table -> class_name -> list method_def -> Prop 
   | CM_NotFound : forall CT C,
       find_class CT C = None ->
       CollectMethods CT C []
-  (* Object class: no superclass *)
-  (* | CM_Object : forall CT C def,
-      find_class CT C = Some def ->
-      super (signature def) = None ->
-      C < dom CT ->
-      CollectMethods CT C (methods (body def)) *)
   (* Class with superclass *)
   | CM_Inherit : forall CT C def own_methods,
       find_class CT C = Some def ->
@@ -519,136 +219,6 @@ Proof.
     -- rewrite H in H3. discriminate.
     -- rewrite H in H3. injection H3 as Heq. subst def0. reflexivity.
 Qed.
-
-(* Inductive MethodLookup : class_table -> class_name -> method_name -> method_def -> Prop :=
-  | ML_Found : forall CT C methods m mdef,
-      CollectMethods CT C methods ->
-      gget_method methods m = Some mdef ->
-      MethodLookup CT C m mdef.
-
-Lemma method_lookup_deterministic : forall CT C m mdef1 mdef2,
-  MethodLookup CT C m mdef1 ->
-  MethodLookup CT C m mdef2 ->
-  mdef1 = mdef2.
-Proof.
-  intros CT C m mdef1 mdef2 H1 H2.
-  inversion H1; subst.
-  inversion H2; subst.
-  (* Both use CollectMethods CT C methods *)
-  assert (methods0 = methods).
-  {
-    eapply collect_methods_deterministic; eauto.
-  }
-  subst methods0.
-  rewrite H0 in H4.
-  injection H4 as Heq.
-  exact Heq.
-Qed.
-
-Inductive MethodParametersBaseTypeLookup : class_table -> class_name -> method_name -> list class_name -> Prop :=
-  | ML_Params_Found : forall CT C methods m mdef mparamslist,
-      CollectMethods CT C methods ->
-      gget_method methods m = Some mdef ->
-      mparamslist = map sctype (mparams (msignature mdef)) ->
-      MethodParametersBaseTypeLookup CT C m mparamslist
-.
-
-Lemma method_parameters_base_type_lookup_deterministic : forall CT C m mparamslist1 mparamslist2,
-  MethodParametersBaseTypeLookup CT C m mparamslist1 ->
-  MethodParametersBaseTypeLookup CT C m mparamslist2 ->
-  mparamslist1 = mparamslist2.
-Proof.
-  intros CT C m mparamslist1 mparamslist2 H1 H2.
-  inversion H1; subst.
-  inversion H2; subst.
-  (* Both use CollectMethods CT C methods *)
-  assert (methods0 = methods).
-  {
-    eapply collect_methods_deterministic; eauto.
-  }
-  subst methods0.
-  rewrite H0 in H4.
-  injection H4 as Heq.
-  subst mdef0.
-  reflexivity.
-Qed.
-
-Inductive MethodReceiverBaseTypeLookup : class_table -> class_name -> method_name -> class_name -> Prop :=
-  | ML_Receiver_Found : forall CT C methods m mdef receivertype,
-      CollectMethods CT C methods ->
-      gget_method methods m = Some mdef ->
-      receivertype = sctype (mreceiver (msignature mdef)) ->
-      MethodReceiverBaseTypeLookup CT C m receivertype
-.
-
-Inductive MethodReturnBaseTypeLookup : class_table -> class_name -> method_name -> class_name -> Prop :=
-  | ML_Return_Found : forall CT C methods m mdef returntype,
-      CollectMethods CT C methods ->
-      gget_method methods m = Some mdef ->
-      returntype = sctype (mret (msignature mdef)) ->
-      MethodReturnBaseTypeLookup CT C m returntype
-.
-
-Lemma method_receiver_base_type_lookup_deterministic : forall CT C m receivertype1 receivertype2,
-  MethodReceiverBaseTypeLookup CT C m receivertype1 ->
-  MethodReceiverBaseTypeLookup CT C m receivertype2 ->
-  receivertype1 = receivertype2.
-Proof.
-  intros CT C m receivertype1 receivertype2 H1 H2.
-  inversion H1; subst.
-  inversion H2; subst.
-  assert (methods0 = methods).
-  {
-    eapply collect_methods_deterministic; eauto.
-  }
-  subst methods0.
-  rewrite H0 in H4.
-  injection H4 as Heq.
-  subst mdef0.
-  reflexivity.
-Qed.
-
-Lemma method_return_base_type_lookup_deterministic : forall CT C m returntype1 returntype2,
-  MethodReturnBaseTypeLookup CT C m returntype1 ->
-  MethodReturnBaseTypeLookup CT C m returntype2 ->
-  returntype1 = returntype2.
-Proof.
-  intros CT C m returntype1 returntype2 H1 H2.
-  inversion H1; subst.
-  inversion H2; subst.
-  assert (methods0 = methods).
-  {
-    eapply collect_methods_deterministic; eauto.
-  }
-  subst methods0.
-  rewrite H0 in H4.
-  injection H4 as Heq.
-  subst mdef0.
-  reflexivity.
-Qed.
-
-Lemma method_params_base_type_length : forall CT C m param_types mdef,
-  MethodLookup CT C m mdef ->
-  MethodParametersBaseTypeLookup CT C m param_types ->
-  length param_types = length (mparams (msignature mdef)).
-Proof.
-  intros CT C m param_types mdef Hlookup Hbase_lookup.
-  inversion Hbase_lookup; subst.
-  (* We have MethodLookup CT C m mdef and gget_method methods m = Some mdef0 *)
-  (* First establish that mdef = mdef0 *)
-  assert (Hlookup_mdef0 : MethodLookup CT C m mdef0).
-  {
-    econstructor; eauto.
-  }
-  assert (Heq : mdef = mdef0).
-  {
-    eapply method_lookup_deterministic; eauto.
-  }
-  subst mdef0.
-  (* Now param_types = map sctype (mparams (msignature mdef)) *)
-  rewrite length_map.
-  reflexivity.
-Qed. *)
 
 (* STATIC WELLFORMEDNESS CONDITION *)
 (* Well-formedness of type use *)
@@ -798,7 +368,6 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
 
   (* Method call *)
   | ST_Call : forall CT sΓ x m y args argtypes Tx Ty mdef,
-                    (* sΓ0 sΓ1 mbody *)
       wf_senv CT sΓ ->
       static_getType sΓ x = Some Tx ->
       static_getType sΓ y = Some Ty ->
@@ -809,12 +378,6 @@ Inductive stmt_typing : class_table -> s_env -> stmt -> s_env -> Prop :=
       qualified_type_subtype CT Ty (mreceiver (msignature mdef)) -> (* receiver subtype checking *) 
       Forall2 (fun arg T => qualified_type_subtype CT arg T) argtypes (mparams (msignature mdef)) -> (* argument subtype checking *)
       stmt_typing CT sΓ (SCall x m y args) sΓ
-
-  (* Cast statement *)
-  (* | S_Cast : forall CT Γ x q C y,
-      static_lookup Γ y = Some (ctype (Build_qualified_type (q_f_proj q) C)) ->
-      wf_stypeuse CT q C ->
-      stmt_eval CT Γ (SCast x q C y) Γ *)
 
   (* Sequence of statements *)
   | ST_Seq : forall CT sΓ s1 sΓ' s2 sΓ'',
@@ -841,11 +404,11 @@ Proof.
   intros CT sΓ x qc C args argtypes consig Htyping Hstatic Hconsig.
   inversion Htyping; subst.
   assert (consig = consig0) by congruence.
-assert (argtypes = argtypes0) by congruence.
-subst.
-apply Forall2_length in H13.
-rewrite <- H13.
-eapply static_getType_list_preserves_length; eauto.
+  assert (argtypes = argtypes0) by congruence.
+  subst.
+  apply Forall2_length in H13.
+  rewrite <- H13.
+  eapply static_getType_list_preserves_length; eauto.
 Qed.
 
 Definition wf_constructor (CT : class_table) (c : class_name) (ctor : constructor_sig) : Prop :=
@@ -866,44 +429,6 @@ Definition wf_constructor (CT : class_table) (c : class_name) (ctor : constructo
       {| sqtype := vpa_mutabilty_constructor_fld (cqualifier ctor) (mutability (ftype field_def));
          sctype := f_base_type (ftype field_def) |})
     (cparams ctor) field_defs.
-
-(* Inductive wf_constructor : class_table -> class_name -> constructor_def -> Prop :=
-  (* Other case: super class and this class both have fields *)
-  | WFConstructorInductive: forall CT C ctor this_fields_def,
-    constructor_def_lookup CT C = Some ctor ->
-    let sig := csignature ctor in
-    let q_c := cqualifier sig in
-    (* let ccon := ctor_type sig in *)
-    (* constructor mutability qualifier is same as bound; Constructor name is the same as class name *)
-    Some q_c = bound CT C -> 
-    (* Parameter types are wellformed *)
-    Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (cparams sig) ->
-    CollectFields CT C this_fields_def -> (* This class has fields *)
-    let body := cbody ctor in
-    let list_assignment := assignments body in
-    let this_fields := map fname this_fields_def in
-    (* Constructor body well-formedness *)
-    (* 1. The assignments in this constructor has the same length as fields for this class *)
-    length list_assignment = length this_fields_def ->
-    (* 2. The first component (field def) in list_assignment is in this_fields - super_fields *)
-    Forall (fun '(f, _) => In f this_fields) list_assignment ->
-    (* 3. Assignment preserve subtyping *)
-    let ctypes := cparams sig in 
-    Forall (fun '(f1, f2) =>
-    exists mf Cf T2,
-      sf_mutability_rel CT C f1 mf /\
-      sf_base_rel CT C f1 Cf /\
-      nth_error ctypes f2 = Some T2 /\
-      qualified_type_subtype CT 
-        ((Build_qualified_type (vpa_mutabilty_constructor_fld q_c mf) Cf))  (* AOSEN: May need revisit*)
-        (T2)
-    ) list_assignment ->
-    (* 4 Constructor supercall wellformed *)
-    (* 4.1 Bound compatibility *)
-    (* 4.2 Argument types are adapted subtype of Parameter type of super constructor *)
-    length (cparams sig) = length this_fields_def ->
-    wf_constructor CT C ctor
-  .*)
 
 Inductive wf_method : class_table -> class_name -> method_def -> Prop :=
   | WFMethod: forall CT C mdef mbodyrettype,
@@ -1054,7 +579,6 @@ Qed.
 (* Well-formedness of program  Aosen: I put it at the end because the main statement need to be well-typed*)
 (* Definition WFProgram (p: program_def) : Prop :=
   Forall (fun decl => WFClass p.(classes) decl) p.(classes) . *)
-
 Lemma find_app : forall A (f : A -> bool) l1 l2 x,
   find f l1 = Some x ->
   find f (l1 ++ l2) = Some x.
@@ -1308,44 +832,6 @@ Proof.
   reflexivity.
 Qed.
 
-(* Lemma method_lookup_in_local_methods : forall CT C mdef m,
-  MethodLookup CT C m mdef ->
-  exists def, find_class CT C = Some def /\
-    (In mdef (methods (body def)) \/
-     exists parent_methods, 
-       CollectMethods CT C (override parent_methods (methods (body def))) /\
-       In mdef (override parent_methods (methods (body def)))).
-Proof.
-  intros CT C mdef m Hlookup.
-  inversion Hlookup; subst.
-  inversion H; subst.
-  - (* CM_NotFound *)
-    exfalso.
-    unfold gget_method in H0.
-    discriminate.
-  - (* CM_Object *)
-    exists def.
-    split.
-    -- exact H1.
-    -- left.
-      unfold gget_method in H0.
-      eapply find_some in H0.
-      destruct H0 as [Hin _].
-      exact Hin.
-  - (* CM_Inherit *)
-    exists def.
-    split.
-    -- exact H1.
-    -- right.
-      exists parent_methods.
-      split.
-      + exact H.
-      + unfold gget_method in H0.
-        eapply find_some in H0.
-        destruct H0 as [Hin _].
-        exact Hin.
-Qed. *)
-
 Lemma collect_fields_exists : forall CT c,
   wf_class_table CT ->
   c < dom CT ->
@@ -1463,26 +949,6 @@ destruct Hin as [n Hnth].
 eapply Forall_nth_error; eauto.
 
 Qed.
-
-(* Lemma wf_method_override_same_param_length : forall CT C mdef cdef parentname supermdef,
-  wf_method CT C mdef ->
-  find_class CT C = Some cdef ->
-  super (signature cdef) = Some parentname ->
-  FindOverrideMethod CT C (mname (msignature mdef)) mdef ->
-  FindOverrideMethod CT parentname (mname (msignature mdef)) supermdef ->
-  dom (mparams (msignature mdef)) = dom (mparams (msignature supermdef)).
-Proof.
-  intros CT C mdef cdef parentname supermdef Hwf_mdef Hfind_C Hsuper Hfind_C_mdef Hfind_parent_mdef.
-  inversion Hwf_mdef; subst.
-  specialize (H0 cdef parentname supermdef Hfind_C Hsuper Hfind_C_mdef Hfind_parent_mdef).
-  destruct H0 as [Heq | [Hforall2 _]].
-  - (* Case: mdef = supermdef *)
-    rewrite Heq. reflexivity.
-  - (* Case: overriding with parameter constraints *)
-    apply Forall2_length in Hforall2.
-    symmetry.
-    exact Hforall2.
-Qed. *)
 
 Lemma method_name_unique_implies_equal : forall methods mdef1 mdef2,
   NoDup (map (fun mdef => mname (msignature mdef)) methods) ->
