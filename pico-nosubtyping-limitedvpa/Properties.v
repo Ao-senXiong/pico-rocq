@@ -152,14 +152,6 @@ Proof.
     destruct Hwf_ct as [Hforall_wf _].
     eapply Forall_nth_error; eauto.
   }
-  (* assert (Hcname_eq : cname (signature class_def) = C).
-  {
-    unfold wf_class_table in Hwf_ct.
-    destruct Hwf_ct as [_ [_ Hcname_consistent]].
-    destruct Hcname_consistent as [_ Hcname_eq].
-    apply Hcname_eq.
-    exact Hfind_class.
-  } *)
   inversion Hlookup; subst.
   eapply method_body_well_typed; eauto.
 apply find_some in H1.
@@ -3166,3 +3158,152 @@ Proof.
   rewrite IHeval_stmt2 in IHeval_stmt1; auto.
 Qed.
 
+Theorem readonly_pico :
+    forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs anyrq,
+      stmt = (SFldWrite readonlyx anyf rhs)-> 
+      static_getType sΓ readonlyx = Some qt ->
+      (sqtype qt) = Rd ->
+      wf_r_config CT sΓ rΓ h ->
+      stmt_typing CT sΓ stmt sΓ' -> 
+      eval_stmt OK CT rΓ h stmt OK rΓ' h' -> 
+      runtime_getVal rΓ readonlyx = Some (Iot l)  ->
+      runtime_getObj h l = Some (mkObj (mkruntime_type anyrq C) vals) ->
+      runtime_getObj h' l = Some (mkObj (mkruntime_type anyrq C) vals') ->
+      sf_assignability_rel CT C f Final \/ sf_assignability_rel CT C f RDA ->
+      nth_error vals f = nth_error vals' f.
+Proof.
+intros CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs anyrq.
+intros Hstmt_form Hreceivermut Hstatic_type Hwf_config Htyping Heval Hruntime_val Hobj_before Hobj_after Hassign_rel.
+
+(* Subst the statement form *)
+subst stmt.
+
+(* Invert the evaluation to get heap update details *)
+inversion Heval; subst.
+
+(* Invert typing to get field write constraints *)
+inversion Htyping; subst.
+
+(* Use the fact that Final/RDA fields are protected from modification *)
+destruct Hassign_rel as [Hfinal | Hrda].
+-  
+  rewrite Hreceivermut in H6.
+  inversion H6.
+  subst Tx.
+  rewrite Hstatic_type in H15.
+  unfold vpa_assignability in H15.
+  destruct a eqn: Haeqn; try easy.
+  unfold wf_r_config in Hwf_config.
+  destruct Hwf_config as [_[_[_[_ [_ Htypable]]]]].
+  assert (Hreadonly_dom : readonlyx < dom sΓ').
+  {
+    apply static_getType_dom in Hreceivermut.
+    exact Hreceivermut.
+  }
+  rewrite Hruntime_val in H2.
+  inversion H2.
+  subst l.
+  specialize (Htypable readonlyx Hreadonly_dom qt Hreceivermut).
+  rewrite Hruntime_val in Htypable.
+  unfold wf_r_typable in Htypable.
+  unfold r_type in Htypable.
+  rewrite H3 in Htypable.
+  destruct Htypable as [base qualifier].
+  rewrite H3 in Hobj_before.
+  inversion Hobj_before.
+  rewrite H0 in base.
+  simpl in base.
+  subst C.
+  assert (Hneq: anyf <> f).
+  {
+    intro Heq.
+    subst anyf.
+    unfold sf_assignability_rel in H12, Hfinal.
+    destruct H12 as [fdef_assign [Hlookup_assign Hassign_assign]].
+    destruct Hfinal as [fdef_final [Hlookup_final Hassign_final]].
+    assert (fdef_assign = fdef_final).
+    {
+      eapply field_lookup_deterministic_rel; eauto.
+    }
+    subst fdef_final.
+    rewrite Hassign_final in Hassign_assign.
+    discriminate.
+  }
+  injection Hobj_before as Hvals_eq.
+  unfold update_field in Hobj_after.
+  rewrite H3 in Hobj_after.
+  simpl in Hobj_after.
+  unfold update_field in Hobj_after.
+  simpl in Hobj_after.
+  assert (Hdom: loc_x < dom h).
+  {
+    apply runtime_getObj_dom in H3.
+    exact H3.
+  }
+  rewrite runtime_getObj_update_same in Hobj_after; auto.
+  inversion Hobj_after; subst.
+  simpl.
+  symmetry.
+  apply update_diff.
+  exact Hneq.
+- (* RDA case: RDA fields cannot be written *)
+  rewrite Hreceivermut in H6.
+  inversion H6.
+  subst Tx.
+  rewrite Hstatic_type in H15.
+  unfold vpa_assignability in H15.
+  destruct a eqn: Haeqn; try easy.
+  unfold wf_r_config in Hwf_config.
+  destruct Hwf_config as [_[_[_[_ [_ Htypable]]]]].
+  assert (Hreadonly_dom : readonlyx < dom sΓ').
+  {
+    apply static_getType_dom in Hreceivermut.
+    exact Hreceivermut.
+  }
+  rewrite Hruntime_val in H2.
+  inversion H2.
+  subst l.
+  specialize (Htypable readonlyx Hreadonly_dom qt Hreceivermut).
+  rewrite Hruntime_val in Htypable.
+  unfold wf_r_typable in Htypable.
+  unfold r_type in Htypable.
+  rewrite H3 in Htypable.
+  destruct Htypable as [base qualifier].
+  rewrite H3 in Hobj_before.
+  inversion Hobj_before.
+  rewrite H0 in base.
+  simpl in base.
+  subst C.
+  assert (Hneq: anyf <> f).
+  {
+    intro Heq.
+    subst anyf.
+    unfold sf_assignability_rel in H12, Hrda.
+    destruct H12 as [fdef_assign [Hlookup_assign Hassign_assign]].
+    destruct Hrda as [fdef_final [Hlookup_final Hassign_final]].
+    assert (fdef_assign = fdef_final).
+    {
+      eapply field_lookup_deterministic_rel; eauto.
+    }
+    subst fdef_final.
+    rewrite Hassign_final in Hassign_assign.
+    discriminate.
+  }
+  injection Hobj_before as Hvals_eq.
+  unfold update_field in Hobj_after.
+  rewrite H3 in Hobj_after.
+  simpl in Hobj_after.
+  unfold update_field in Hobj_after.
+  simpl in Hobj_after.
+  assert (Hdom: loc_x < dom h).
+  {
+    apply runtime_getObj_dom in H3.
+    exact H3.
+  }
+  rewrite runtime_getObj_update_same in Hobj_after; auto.
+  inversion Hobj_after; subst.
+  simpl.
+  symmetry.
+  apply update_diff.
+  exact Hneq.
+Qed.
