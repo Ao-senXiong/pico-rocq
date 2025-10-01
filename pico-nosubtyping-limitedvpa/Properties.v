@@ -3158,7 +3158,7 @@ Proof.
   rewrite IHeval_stmt2 in IHeval_stmt1; auto.
 Qed.
 
-Theorem readonly_pico :
+Theorem readonly_pico_field_write:
     forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs anyrq,
       stmt = (SFldWrite readonlyx anyf rhs)-> 
       static_getType sΓ readonlyx = Some qt ->

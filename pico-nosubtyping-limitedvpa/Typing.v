@@ -297,9 +297,8 @@ Inductive expr_has_type : class_table -> s_env -> expr -> qualified_type -> Prop
 
   (* Null typing *)
   | ET_Null : forall CT Γ q class_name,
-      q = Rd -> (* did not define the bottom type of Java base type *)
       wf_senv CT Γ ->
-      class_name < dom CT -> (* Add this constraint *)
+      class_name < dom CT ->
       expr_has_type CT Γ ENull (Build_qualified_type q class_name)
 
   (* Variable typing *)
@@ -555,7 +554,7 @@ Proof.
   intros CT sΓ e T HWFCT Htype.
   induction Htype.
   - (* ET_Null case *)
-    exact H1.
+    exact H0.
   - (* ET_Var case *)
     (* Use the fact that variables in well-formed environments have bounded types *)
     eapply senv_var_domain; eauto.
