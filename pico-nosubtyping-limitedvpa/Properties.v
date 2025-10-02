@@ -737,23 +737,90 @@ Qed. *)
 
 Lemma collect_fields_consistent_through_runtime_static : forall CT C D fields1 fields2 f fdef1 fdef2,
   wf_class_table CT ->
-  C = D ->
+  base_subtype CT C D ->
   CollectFields CT C fields1 ->
   CollectFields CT D fields2 ->
   gget fields1 f = Some fdef1 ->
   gget fields2 f = Some fdef2 ->
   fdef1 = fdef2.
 Proof.
-  intros CT C D fields1 fields2 f fdef1 fdef2 Hwf_ct Heq Hcf1 Hcf2 Hget1 Hget2.
-  subst D.
-  assert (fields1 = fields2).
-  {
-    eapply collect_fields_deterministic_rel; eauto.
-  }
-  subst fields2.
-  rewrite Hget1 in Hget2.
-  injection Hget2 as Heq.
-  exact Heq.
+  intros CT C D fields1 fields2 f fdef1 fdef2 Hwf_ct Hsub Hcf1 Hcf2 Hget1 Hget2.
+  
+  (* Generalize everything that varies *)
+  revert fields1 fields2 f fdef1 fdef2 Hcf1 Hcf2 Hget1 Hget2.
+  
+  (* Now induct on Hsub *)
+  induction Hsub; intros fields1 fields2 f fdef1 fdef2 Hcf1 Hcf2 Hget1 Hget2.
+  
+  - (* Reflexive: C = D *)
+    assert (fields1 = fields2) by (eapply collect_fields_deterministic_rel; eauto).
+    subst fields2.
+    congruence.
+    
+  - (* Transitive: C <: D <: E *)
+    (* Get fields for D *)
+    assert (Hexists_D : exists fields_D, CollectFields CT D fields_D).
+    { 
+      (* D must be in CT domain since D <: E *)
+      assert (HD_dom : D < dom CT).
+      {
+        eapply base_subtype_domain; eauto.
+      }
+      (* Use collect_fields_exists *)
+      eapply collect_fields_exists; eauto.
+    }
+    destruct Hexists_D as [fields_D HcfD].
+    
+    (* Get field at f in D *)
+    assert (Hget_D : exists fdef_D, gget fields_D f = Some fdef_D).
+    {
+      assert (Hlookup_E : FieldLookup CT E f fdef2).
+      { apply FL_Found with fields2; auto. }
+      assert (Hlookup_D : FieldLookup CT D f fdef2).
+      { apply (field_inheritance_subtyping CT D E f fdef2); auto. }
+      inversion Hlookup_D as [? ? fields_D' ? ? HcfD' HgetD'].
+      assert (fields_D = fields_D') by (eapply collect_fields_deterministic_rel; eauto).
+      subst fields_D'.
+      exists fdef2.
+      exact HgetD'.
+    }
+    destruct Hget_D as [fdef_D HgetD].
+    
+    (* Apply IH1: C <: D *)
+    assert (fdef1 = fdef_D) by (eapply IHHsub1; eauto).
+    
+    (* Apply IH2: D <: E *)
+    assert (fdef_D = fdef2) by (eapply IHHsub2; eauto).
+    
+    congruence.
+    -
+    assert (Hlookup1 : FieldLookup CT C f fdef1).
+    { apply FL_Found with fields1; auto. }
+    assert (Hlookup2 : FieldLookup CT D f fdef2).
+    { apply FL_Found with fields2; auto. }
+    assert (Hlookup_in_C : FieldLookup CT C f fdef2).
+    { unfold parent_lookup in H1.
+    destruct (find_class CT C) as [def|] eqn:Hfind; [|discriminate].
+    eapply field_inheritance_preserves_type; eauto.
+    }
+    eapply field_lookup_deterministic_rel; eauto.
+Qed.
+
+Lemma sf_assignability_consistent_subtype : forall CT C D f a1 a2,
+  wf_class_table CT ->
+  base_subtype CT C D ->
+  sf_assignability_rel CT C f a1 ->
+  sf_assignability_rel CT D f a2 ->
+  a1 = a2.
+Proof.
+  intros CT C D f a1 a2 Hwf_ct Hsub Ha1 Ha2.
+  unfold sf_assignability_rel in *.
+  destruct Ha1 as [fdef1 [Hlookup1 Hassign1]].
+  destruct Ha2 as [fdef2 [Hlookup2 Hassign2]].
+  inversion Hlookup1 as [? ? fields1 ? ? Hcf1 Hget1]; subst.
+  inversion Hlookup2 as [? ? fields2 ? ? Hcf2 Hget2]; subst.
+  assert (fdef1 = fdef2) by (eapply collect_fields_consistent_through_runtime_static; eauto).
+  subst. congruence.
 Qed.
 
 Lemma correspondence_to_typable : forall CT sΓ rΓ h i sqt loc,
@@ -1021,7 +1088,6 @@ Proof.
       simpl.
       f_equal.
       apply Forall2_length in H23.
-      (* rewrite <- Heqmsig. *)
         assert (Hy_dom : y < dom sΓ').
         {
           apply static_getType_dom in H14.
@@ -1540,7 +1606,9 @@ Proof.
           rewrite Hrtype_preserved.
           exact Hcorrinit.
         }
+    } *)
     }
+    admit.
     unfold wf_r_config in Hwf.
     destruct Hwf as [Hwf_classtable _].
     exact Hwf_classtable.
@@ -1560,11 +1628,6 @@ Proof.
     destruct (bound CT (rctype (rt_type obj))) as [class_def|] eqn:Hbound.
     - destruct Hwf_rtypeuse as [Hwf_rtypeuse _]. exact Hwf_rtypeuse.
     - contradiction.
-  } *)
-    }
-    admit.
-    admit.
-    admit.
   }
   - (* Case: stmt = Skip *)
     intros.
@@ -2008,7 +2071,6 @@ Proof.
                     inversion H10;subst.
                     symmetry.
                     eapply collect_fields_consistent_through_runtime_static with (C:=(rctype (rt_type o)))(fields1:=Hlen_fields)(fields2:=fields)(fdef1:=b)(fdef2:=fieldT); eauto.
-                    admit.
                   }
 
                   subst b.
@@ -2024,9 +2086,7 @@ Proof.
                   (* Base type *)
                   apply qualified_type_subtype_base_subtype in H15.
                   simpl in H15.
-                  admit.
-                  (* rewrite <- H15. *)
-                  (* exact Hxybase. *)
+                  eapply base_trans; eauto.
 
                   (* Qualifier *)
                   apply qualified_type_subtype_q_subtype in H15.
@@ -2085,18 +2145,14 @@ Proof.
                       destruct Hcorr as [Hbase_sub Hqual_typable].
                       inversion Hobj.
                       subst o_lx.
-                      admit.
-                      (* rewrite Hbase_sub. *)
-                      (* exact H. *)
+                      exact Hbase_sub.
                     }
                     subst b.
                     split.
                     + (* Base type equality *)
                       apply qualified_type_subtype_base_subtype in H15copy.
                       simpl in H15copy.
-                      admit.
-                      (* rewrite <- H15copy. *)
-                      (* exact Hbase_y. *)
+                      eapply base_trans; eauto.
                     + (* Qualifier typable *)
                       move H15 at bottom.
                       inversion H0.
@@ -2456,9 +2512,7 @@ Proof.
         split.
           +
         destruct H as [Hrctype _].
-        admit.
-        (* rewrite Hrctype. *)
-        (* destruct (nth_error (cparams consig) i) as [paramtype|] eqn: Hparamtype.
+        destruct (nth_error (cparams consig) i) as [paramtype|] eqn: Hparamtype.
         2:{
           apply nth_error_None in Hparamtype.
           assert (Hi_fdef : i < dom field_defs).
@@ -2473,55 +2527,55 @@ Proof.
         eapply Forall2_nth_error with (i:=i) (b:=fdef) (a:=paramtype) in Hfieldtypematch.
         apply qualified_type_subtype_base_subtype in Hfieldtypematch.
         simpl in Hfieldtypematch.
-        rewrite <- Hfieldtypematch.
         eapply Forall2_nth_error with (i:=i) (b:=paramtype) (a:=argtype) in H17.
         apply qualified_type_subtype_base_subtype in H17.
-        exact H17.
+        eapply base_trans; eauto.
+        eapply base_trans; eauto.
         exact Hargtype.
         exact Hparamtype.
         exact Hparamtype.
-        exact Hfdef. *)
-          + 
+        exact Hfdef.
+        + 
           destruct H as [Hrctype Hqctype].
-        destruct (nth_error (cparams consig) i) as [paramtype|] eqn: Hparamtype.
-        2:{
-          apply nth_error_None in Hparamtype.
-          assert (Hi_fdef : i < dom field_defs).
-        {
-          apply nth_error_Some.
-          rewrite Hfdef.
-          discriminate.
-        }
-        rewrite <- Hdom_eq in Hi_fdef.
-        lia.
-        }
-        eapply Forall2_nth_error with (i:=i) (b:=fdef) (a:=paramtype) in Hfieldtypematch.
-        apply qualified_type_subtype_q_subtype in Hfieldtypematch.
-        eapply Forall2_nth_error with (i:=i) (b:=paramtype) (a:=argtype) in H17.
-        apply qualified_type_subtype_q_subtype in H17.
-        apply qualified_type_subtype_q_subtype in H18.
+            destruct (nth_error (cparams consig) i) as [paramtype|] eqn: Hparamtype.
+            2:{
+              apply nth_error_None in Hparamtype.
+              assert (Hi_fdef : i < dom field_defs).
+              {
+                apply nth_error_Some.
+                rewrite Hfdef.
+                discriminate.
+              }
+              rewrite <- Hdom_eq in Hi_fdef.
+              lia.
+            }
+            eapply Forall2_nth_error with (i:=i) (b:=fdef) (a:=paramtype) in Hfieldtypematch.
+            apply qualified_type_subtype_q_subtype in Hfieldtypematch.
+            eapply Forall2_nth_error with (i:=i) (b:=paramtype) (a:=argtype) in H17.
+            apply qualified_type_subtype_q_subtype in H17.
+            apply qualified_type_subtype_q_subtype in H18.
 
-        2: exact Hargtype.
-        2: exact Hparamtype.
-        2: exact Hparamtype.
-        2: exact Hfdef.
-        simpl in Hfieldtypematch.
-        move Hqctype at bottom.
-        move Hfieldtypematch at bottom.
-        move H16 at bottom.
-        move H17 at bottom.
-        move H18 at bottom.
-        simpl in H18.
-        unfold q_r_proj in *.
-        destruct (mutability (ftype fdef)) eqn: Hfieldq.
-        all: destruct q_c eqn: Hq_c.
-        all: unfold vpa_mutabilty_rec_fld; unfold qualifier_typable_heap.
-        all: destruct (rqtype rqt) eqn: Hrqtq; try easy.
-        all: destruct (sqtype Tx) eqn: Htxq; try easy.
-        all: destruct (cqualifier consig) eqn: Hconstructoreturnq.
-        all: unfold vpa_mutabilty_constructor_fld in *; unfold vpa_mutabilty_bound in *; try easy.
-        all: destruct (sqtype argtype) eqn: Hargq; unfold qualifier_typable in Hqctype; try easy.
-        all: destruct (sqtype paramtype) eqn: Hparamq; try easy.
+            2: exact Hargtype.
+            2: exact Hparamtype.
+            2: exact Hparamtype.
+            2: exact Hfdef.
+            simpl in Hfieldtypematch.
+            move Hqctype at bottom.
+            move Hfieldtypematch at bottom.
+            move H16 at bottom.
+            move H17 at bottom.
+            move H18 at bottom.
+            simpl in H18.
+            unfold q_r_proj in *.
+            destruct (mutability (ftype fdef)) eqn: Hfieldq.
+            all: destruct q_c eqn: Hq_c.
+            all: unfold vpa_mutabilty_rec_fld; unfold qualifier_typable_heap.
+            all: destruct (rqtype rqt) eqn: Hrqtq; try easy.
+            all: destruct (sqtype Tx) eqn: Htxq; try easy.
+            all: destruct (cqualifier consig) eqn: Hconstructoreturnq.
+            all: unfold vpa_mutabilty_constructor_fld in *; unfold vpa_mutabilty_bound in *; try easy.
+            all: destruct (sqtype argtype) eqn: Hargq; unfold qualifier_typable in Hqctype; try easy.
+            all: destruct (sqtype paramtype) eqn: Hparamq; try easy.
           }
       }
     * (* ι < dom h (existing object) *)
@@ -2723,22 +2777,6 @@ Proof.
     exact IH2.
 Admitted.
 
-Definition get_this_type (sΓ : s_env) : option qualified_type :=
-  match sΓ with
-  | [] => None
-  | Tthis :: _ => 
-    Some Tthis
-  end.
-
-Definition imm_runtime_type (C : class_name) : runtime_type := 
-  mkruntime_type Imm_r C.
-
-Lemma imm_not_subtype_mut : ~ q_subtype Imm Mut.
-Proof.
-  intro H.
-  inversion H; subst; discriminate.
-Qed.
-
 (* ------------------------------------------------------------- *)
 (* Immutability properties for PICO *)
 Notation "l [ i ]" := (nth_error l i) (at level 50).
@@ -2808,10 +2846,10 @@ Proof.
           destruct Hcorr as [Hbase_sub Htypable].
           destruct H5 as [Hffinal | HfRDA].
           have Hrctype_eq : rctype rqt = C by (rewrite <- Hrtype_eq; reflexivity).
-          assert (Heq : a = Final).
+          subst C.
+        assert (Heq : Final = a).
         {
-          eapply sf_assignability_deterministic_rel; eauto.
-          admit.
+          eapply sf_assignability_consistent_subtype with (f := f0) (C := rctype rqt) (D := sctype Tx); eauto.
         }
         apply vpa_assingability_assign_cases in H20.
         destruct H20 as [HAassignable | HARDA ].
@@ -2824,9 +2862,9 @@ Proof.
         destruct H20 as [HAassignable | HARDA ].
         have Hrctype_eq : rctype rqt = C by (rewrite <- Hrtype_eq; reflexivity).
         rewrite HAassignable in H17.
+        subst C.
         assert (RDA = Assignable). {
-          eapply sf_assignability_deterministic_rel; eauto.
-          admit.
+          eapply sf_assignability_consistent_subtype with (f := f0) (C := rctype rqt) (D := sctype Tx); eauto.
         }
         discriminate.
         destruct HARDA as [HsqtypeMut _].
@@ -3269,8 +3307,8 @@ Proof.
     simpl in Hnth.
     simpl in Hnth.
     lia.
-    }
-    (* rewrite getmbody. *)
+    }*)
+  }
     exact Hwf_method_frame.
     rewrite getmbody.
     exact Htyping_method.
@@ -3296,12 +3334,7 @@ Proof.
     destruct (bound CT rc_obj) as [class_def|] eqn:Hbound.
     destruct Hwf_rtypeuse as [Hwf_rtypeuse _].
     exact Hwf_rtypeuse.
-    contradiction. *)
-  }
-  admit.
-  admit.
-  admit.
-  admit.
+    contradiction.
   -  (* Seq *) (* Apply IH transitively *)
   intros. inversion H2; subst. 
   specialize (eval_stmt_preserves_heap_domain_simple CT rΓ h s1 rΓ' h' H3_) as Hh'.
@@ -3377,10 +3410,10 @@ destruct Hassign_rel as [Hfinal | Hrda].
     unfold sf_assignability_rel in H12, Hfinal.
     destruct H12 as [fdef_assign [Hlookup_assign Hassign_assign]].
     destruct Hfinal as [fdef_final [Hlookup_final Hassign_final]].
-    assert (fdef_assign = fdef_final).
+    assert (fdef_final = fdef_assign).
     {
       eapply field_lookup_deterministic_rel; eauto.
-      admit.
+      eapply field_inheritance_subtyping; eauto.
     }
     subst fdef_final.
     rewrite Hassign_final in Hassign_assign.    discriminate.
@@ -3437,10 +3470,10 @@ destruct Hassign_rel as [Hfinal | Hrda].
     unfold sf_assignability_rel in H12, Hrda.
     destruct H12 as [fdef_assign [Hlookup_assign Hassign_assign]].
     destruct Hrda as [fdef_final [Hlookup_final Hassign_final]].
-    assert (fdef_assign = fdef_final).
+    assert (fdef_final = fdef_assign).
     {
       eapply field_lookup_deterministic_rel; eauto.
-      admit.
+      eapply field_inheritance_subtyping; eauto.
     }
     subst fdef_final.
     rewrite Hassign_final in Hassign_assign.
@@ -3463,4 +3496,4 @@ destruct Hassign_rel as [Hfinal | Hrda].
   symmetry.
   apply update_diff.
   exact Hneq.
-Admitted.
+Qed.

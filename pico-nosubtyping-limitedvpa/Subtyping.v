@@ -129,3 +129,18 @@ Proof.
     apply H0.
     reflexivity.
 Qed.
+
+Lemma base_subtype_domain : forall CT C D,
+  base_subtype CT C D ->
+  C < dom CT /\ D < dom CT.
+Proof.
+  intros CT C D Hsub.
+  induction Hsub.
+  - (* Reflexive *) 
+    split; exact H. (* Need to extract from wf_class_table *)
+  - (* Transitive *)
+    destruct IHHsub1 as [HC HD].
+    destruct IHHsub2 as [_ HE].
+    split; auto.
+  - split; auto.
+Qed.
