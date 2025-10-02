@@ -31,13 +31,36 @@ Proof.
 Qed.
 Global Hint Resolve q_subtype_trans: typ.
 
+Definition parent_lookup (CT : class_table) (C : class_name) : option class_name :=
+  match find_class CT C with
+  | Some def => super (signature def)
+  | None => None
+  end.
+
+(* Java base type subtyping *)
+Inductive base_subtype : class_table -> class_name -> class_name -> Prop :=
+  | base_refl : forall (CT : class_table) (C : class_name),
+      (* Reflexivity of base subtyping *)
+      C < dom CT ->
+      base_subtype CT C C
+  | base_trans : forall (CT : class_table) (C D E : class_name),
+      base_subtype CT C D ->
+      base_subtype CT D E -> 
+      base_subtype CT C E
+  | base_extends : forall (CT : class_table) (C D : class_name),
+      C < dom CT ->
+      D < dom CT ->
+      parent_lookup CT C = Some D ->
+      base_subtype CT C D.
+Global Hint Constructors base_subtype: typ.
+
 (* Qualified type subtyping *)
 Inductive qualified_type_subtype : class_table -> qualified_type -> qualified_type -> Prop :=
   | qtype_sub : forall CT qt1 qt2,
 	 		(sctype qt1) < (dom CT) ->
       (sctype qt2) < (dom CT) ->
       q_subtype (sqtype qt1) (sqtype qt2) ->
-      sctype qt1 = sctype qt2 ->
+      base_subtype CT (sctype qt1) (sctype qt2) ->
       qualified_type_subtype CT qt1 qt2
   | qtype_trans: forall CT qt1 qt2 qt3,
       qualified_type_subtype CT qt1 qt2 ->
@@ -75,16 +98,15 @@ Qed.
 Lemma qualified_type_subtype_base_subtype :
   forall CT qt1 qt2,
     qualified_type_subtype CT qt1 qt2 ->
-    (sctype qt1) = (sctype qt2).
+    base_subtype CT (sctype qt1) (sctype qt2).
 Proof.
     intros CT qt1 qt2 H.
     induction H.
     generalize dependent qt1.
     generalize dependent qt2.
     - intros. exact H2.
-    - lia. 
-    - 
-      reflexivity.
+    - eapply base_trans; eauto.
+    - eapply base_refl; eauto.
 Qed.
 
 Lemma qualified_type_subtype_q_subtype :

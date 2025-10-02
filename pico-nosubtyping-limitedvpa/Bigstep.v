@@ -130,7 +130,7 @@ Definition wf_obj (CT: class_table) (h: heap) (ι: Loc) : Prop :=
           | Some _ => 
             (* Field value exists and has correct type *)
             exists rqt, r_type h loc = Some rqt /\
-            (rctype rqt) = f_base_type (ftype fdef) /\
+            base_subtype CT (rctype rqt) (f_base_type (ftype fdef)) /\
             qualifier_typable_heap (rqtype rqt) (vpa_mutabilty_rec_fld (rqtype (rt_type o)) (mutability (ftype fdef)))
           | None => False
           end
@@ -161,7 +161,7 @@ Definition wf_heap (CT: class_table) (h: heap) : Prop :=
 Definition wf_r_typable (CT: class_table) (rΓ: r_env) (h: heap) (ι: Loc) (sqt: qualified_type) : Prop :=
   match r_type h ι with
   | Some rqt =>
-      (rctype rqt) = (sctype sqt) /\ 
+      base_subtype CT (rctype rqt) (sctype sqt) /\ 
       qualifier_typable (rqtype rqt) (sqtype sqt)
   | _ => False
   end.
@@ -419,6 +419,8 @@ Proof.
   apply qualified_type_subtype_base_subtype in Hsub.
   inversion Hsub; subst.
   exact Hbase.
+  eapply base_trans; eauto.
+  eapply base_trans; eauto.
   - destruct Hwf as [_ Hqualifier]. 
   eapply qualifier_typable_subtype; [ exact Hsub | exact Hqualifier].
 Qed.
@@ -954,8 +956,7 @@ Proof.
     eapply field_lookup_deterministic_rel.
     - exact Hfield_lookup_o.
     - destruct Hx_wf as [Hbase _].
-      rewrite Hbase.
-      exact H9.
+      eapply field_inheritance_subtyping; eauto.
   }  
   subst fdef.
     split.

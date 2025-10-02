@@ -24,14 +24,42 @@ Proof.
     eapply Forall_nth_error; eauto.
   }
   inversion Hwf_class; subst.
+    - (* WFObjectDef: no parent *)
+    exists (methods (body class_def)).
+    eapply CM_Object; eauto.
   - (* WFOtherDef: has parent *)
-  assert (C0 = C) by (unfold C0; eapply find_class_cname_consistent; eauto).
-  subst C0.
-  exists (methods (body class_def)).
-  apply CM_Inherit with class_def.
-  -- exact Hfind_class.
-  -- exact Hdom.
-  -- reflexivity.
+    assert (Hdom_parent : superC < dom CT).
+    {
+      unfold wf_class_table in Hwf_ct.
+      destruct Hwf_ct as [_ [_ [Hotherclasses Hcname_consistent]]].
+      assert (Hcname_eq : cname (signature class_def) = C).
+      {
+        apply Hcname_consistent.
+        exact Hfind_class.
+      }
+      rewrite Hcname_eq in H1.
+      (* Use H2: C > superC *)
+      lia.
+    }
+    (* Apply strong induction hypothesis *)
+    assert (IH_parent : exists parent_methods, CollectMethods CT superC parent_methods).
+    {
+      apply IH.
+      (* Need to prove superC < C *)
+      unfold wf_class_table in Hwf_ct.
+      destruct Hwf_ct as [_ [_ [_ Hcname_consistent]]].
+      assert (Hcname_eq : cname (signature class_def) = C).
+      {
+        apply Hcname_consistent.
+        exact Hfind_class.
+      }
+      rewrite Hcname_eq in H1.
+      exact H1.
+      exact Hdom_parent.
+    }
+    destruct IH_parent as [parent_methods Hcollect_parent].
+    exists (override parent_methods (methods (body class_def))).
+    eapply CM_Inherit; eauto.
 Qed.
 
 Lemma override_parent_method_in : forall parent_methods own_methods m mdef,
@@ -111,23 +139,13 @@ Proof.
     eapply Forall_nth_error; eauto.
   }
 
-  (* assert (Hcname_eq : cname (signature cdef) = C).
-  {
-    unfold wf_class_table in Hwf_ct.
-    destruct Hwf_ct as [_ [_ Hcname_consistent]].
-    destruct Hcname_consistent as [_ Hcname_eq].
-    apply Hcname_eq.
-    exact HfindC.
-  } *)
   assert (Hwf_mdef : wf_method CT C mdef).
   {
     eapply method_lookup_wf_class; eauto.
   }
   inversion Hwf_mdef; subst.
   destruct H as [sΓ' [Htyping _]].
-  exists sΓ'.
-  unfold sΓ, msig in Htyping.
-  unfold methodbody, mbodystmt in Htyping.
+  exists x.
   exact Htyping.
 Qed.
 
@@ -152,11 +170,26 @@ Proof.
     destruct Hwf_ct as [Hforall_wf _].
     eapply Forall_nth_error; eauto.
   }
-  inversion Hlookup; subst.
-  eapply method_body_well_typed; eauto.
-apply find_some in H1.
-destruct H1 as [Hin _].
-exact Hin.
+  assert (Hcname_eq : cname (signature class_def) = C).
+  {
+    unfold wf_class_table in Hwf_ct.
+    destruct Hwf_ct as [_ [_ Hcname_consistent]].
+    destruct Hcname_consistent as [_ Hcname_eq].
+    apply Hcname_eq.
+    exact Hfind_class.
+  }
+
+  assert (Hwf_inherited : exists D ddef, base_subtype CT C D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
+  {
+    eapply method_lookup_in_wellformed_inherited; eauto.
+  }
+  destruct Hwf_inherited as [D [ddef [Hsub [Hfind_D [Hin_D Hwf_D]]]]].
+
+  (* Extract the statement typing from wf_method *)
+  inversion Hwf_D; subst.
+  destruct H as [sΓ' [Htyping _]].
+  exists x.
+  exact Htyping.
 Qed.
 
 Lemma wf_method_sig_types : forall CT C mdef,
@@ -166,12 +199,12 @@ Lemma wf_method_sig_types : forall CT C mdef,
 Proof.
   intros CT C mdef Hwf_method.
   inversion Hwf_method; subst.
-  destruct H as [sΓ' [Htyping _]].
-  assert (Hwf_env : wf_senv CT sΓ).
+  destruct H as [mreturn [Htyping _]].
+  assert (Hwf_env : wf_senv CT (mreceiver (msignature mdef) :: mparams (msignature mdef))).
   {
     eapply stmt_typing_wf_env; eauto.
   }
-  unfold sΓ, msig in Hwf_env.
+  (* unfold sΓ, msig in Hwf_env. *)
   inversion Hwf_env; subst.
   split.
   - (* Receiver well-formedness *)
@@ -233,19 +266,11 @@ Lemma method_sig_wf_receiver_by_find : forall CT C m mdef,
   wf_stypeuse CT (sqtype (mreceiver (msignature mdef))) (sctype (mreceiver (msignature mdef))).
 Proof.
   intros CT C m mdef Hwf_ct Hdom Hlookup.
-  assert (Hexists_class : exists class_def, find_class CT C = Some class_def).
+  assert (Hwf_inherited : exists D ddef, base_subtype CT C D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
   {
-    apply find_class_Some. exact Hdom.
+    eapply method_lookup_in_wellformed_inherited; eauto.
   }
-  destruct Hexists_class as [class_def Hfind_class].
-  inversion Hlookup; subst.
-  assert (Hwf_mdef : wf_method CT C mdef).
-  {
-    eapply method_lookup_wf_class; eauto.
-    apply find_some in H1.
-    destruct H1 as [Hin _].
-    exact Hin.
-  }
+  destruct Hwf_inherited as [D [ddef [Hsub [Hfind_D [Hin_D Hwf_D]]]]].
   eapply wf_method_sig_types; eauto.
 Qed.
 
@@ -256,19 +281,11 @@ Lemma method_sig_wf_parameters_by_find : forall CT C m mdef,
   Forall (fun T => wf_stypeuse CT (sqtype T) (sctype T)) (mparams (msignature mdef)).
 Proof.
   intros CT C m mdef Hwf_ct Hdom Hlookup.
-    assert (Hexists_class : exists class_def, find_class CT C = Some class_def).
-{
-  apply find_class_Some. exact Hdom.
-}
-destruct Hexists_class as [class_def Hfind_class].
-inversion Hlookup; subst.
-assert (Hwf_mdef : wf_method CT C mdef).
-{
-  eapply method_lookup_wf_class; eauto.
-  apply find_some in H1.
-  destruct H1 as [Hin _].
-  exact Hin.
-}
+  assert (Hwf_inherited : exists D ddef, base_subtype CT C D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
+  {
+    eapply method_lookup_in_wellformed_inherited; eauto.
+  }
+  destruct Hwf_inherited as [D [ddef [Hsub [Hfind_D [Hin_D Hwf_D]]]]].
   eapply wf_method_sig_types; eauto.
 Qed.
 
@@ -326,8 +343,12 @@ Proof.
   apply In_gget_method_unique.
   - (* Extract NoDup from wf_class *)
     inversion Hwf_class; subst.
+    + (* WFObjectDef case *)
+      rewrite H2.
+      simpl.
+      constructor.
     + (* WFOtherDef case *)
-      destruct H0 as [_ [_ [Hnodup _]]].
+      destruct H2 as [_ [_ [Hnodup _]]].
       unfold bod in Hnodup.
       exact Hnodup.
   - exact Hin.
@@ -341,27 +362,26 @@ Lemma constructor_params_field_count : forall CT C ctor csig fields,
   csig = csignature ctor ->
   CollectFields CT C fields ->
   List.length (cparams csig) = List.length fields.
-  Proof.
-  intros CT C ctor csig fields Hwf_ct Hdom Hctor_lookup Hcsig_eq Hcollect.
+Proof.
+  intros CT C ctor csig fields Hwf_ct Hdom Hctor_lookup Hcsig Hcollect.
   subst csig.
   
+  (* Move the quantified variables inside the induction *)
+  revert ctor fields Hctor_lookup Hcollect.
+  
+  (* Strong induction on C *)
+  induction C as [C IH] using lt_wf_ind.
+  
+  intros ctor fields Hctor_lookup Hcollect.
   (* Get the class definition *)
   assert (Hclass_exists : exists cdef, find_class CT C = Some cdef).
   {
-    apply find_class_Some. exact Hdom.
+    apply nth_error_Some_exists.
+    exact Hdom.
   }
   destruct Hclass_exists as [cdef Hfind_class].
   
-  (* Establish constructor equality *)
-  assert (Hctor_eq : constructor (body cdef) = ctor).
-  {
-    unfold constructor_def_lookup in Hctor_lookup.
-    rewrite Hfind_class in Hctor_lookup.
-    injection Hctor_lookup as Hctor_eq.
-    exact Hctor_eq.
-  }
-  
-  (* Extract well-formedness *)
+  (* Extract well-formedness of the class *)
   assert (Hwf_class : wf_class CT cdef).
   {
     unfold wf_class_table in Hwf_ct.
@@ -370,23 +390,114 @@ Lemma constructor_params_field_count : forall CT C ctor csig fields,
   }
   
   (* Extract constructor well-formedness *)
-  inversion Hwf_class; subst.
-  destruct H0 as [Hwf_ctor _].
-  assert (C0 = C) by (unfold C0; eapply find_class_cname_consistent; eauto).
-  subst C0.
-  inversion Hwf_ctor; subst.
-  (* assert (Hfields_eq : fields = this_fields_def).
+  assert (Hctor_eq : constructor (body cdef) = ctor).
   {
-    eapply collect_fields_deterministic_rel; eauto.
-  } *)
-  (* subst fields. *)
-  unfold Syntax.body.
-  fold bod.
-  destruct H1 as [_ [field_defs [Hcollect_H1 [Hdom_eq _]]]].
-  assert (field_defs = fields) by (eapply collect_fields_deterministic_rel; eauto).
-  subst field_defs.
-  exact Hdom_eq.
-Qed.
+    unfold constructor_def_lookup in Hctor_lookup.
+    rewrite Hfind_class in Hctor_lookup.
+    injection Hctor_lookup as Hctor_eq.
+    exact Hctor_eq.
+  }
+  
+  (* Case analysis on class structure *)
+  inversion Hwf_class; subst.
+  - (* Object class case *)
+    (* inversion H4; subst. *)
+    inversion Hcollect; subst.
+    destruct (find_class CT C).
+    easy.
+    easy.
+    (* exfalso. *)
+    (* subst def. *)
+    rewrite H4.
+    easy.
+    admit.
+    (* rewrite Hfind_class in H3.
+    inversion H3.
+    subst cdef.
+    apply find_class_cname_consistent in Hfind_class.
+    rewrite Hfind_class in H3.
+    rewrite H13 in H3.
+    rewrite H14 in H3.
+    discriminate H3. exact Hwf_ct.
+    unfold parent_lookup in H3.
+    exfalso.
+    have Hfind_class_copy := Hfind_class.
+    apply find_class_cname_consistent in Hfind_class.
+    rewrite Hfind_class in H3.
+    rewrite Hfind_class_copy in H3.
+    rewrite H in H3.
+    discriminate.
+    exact Hwf_ct. *)
+  - (* Regular class case with superclass *)
+    destruct H2 as [Hwf_ctor [Hnodup_methods [Hforall_methods Hforall_fields]]].
+
+    (* Extract class name consistency *)
+    assert (Hcname_eq : cname sig = C).
+    {
+      apply find_class_cname_consistent in Hfind_class; auto.
+    }
+    admit.
+    (* Use the fact that superC < C
+    assert (Hsuper_lt : superC < C) by (rewrite <- Hcname_eq; exact H).
+
+    (* Apply induction hypothesis to superC *)
+    assert (Hsuper_dom : superC < dom CT) by lia.
+
+    (* Get superclass constructor and fields *)
+    assert (Hsuper_ctor_exists : exists super_ctor, constructor_def_lookup CT superC = Some super_ctor).
+    {
+      eapply constructor_def_lookup_Some; eauto.
+    }
+    destruct Hsuper_ctor_exists as [super_ctor Hsuper_ctor_lookup].
+
+    assert (Hsuper_fields_exists : exists super_fields, CollectFields CT superC super_fields).
+    {
+      eapply collect_fields_exists; eauto.
+    }
+    destruct Hsuper_fields_exists as [super_fields Hsuper_collect].
+
+    have Hsuper_eq := IH superC Hsuper_lt Hsuper_dom super_ctor super_fields Hsuper_ctor_lookup Hsuper_collect.
+    inversion Hwf_ctor; subst.
+
+    (* Extract information about how fields are collected *)
+    inversion Hcollect; subst.
+    rewrite Hfind_class in H9. 
+    discriminate.
+    assert (cdef = def).
+    {
+      eapply find_class_consistent; eauto.
+    }
+    subst cdef.
+    rewrite H0 in H10.
+    discriminate.
+    fold bod.
+    fold sig2.
+    unfold parent_lookup in H1.
+    fold C0 in H9.
+    rewrite H9 in H1.
+    rewrite H10 in H1.
+    discriminate.
+
+    assert (superC = superclass_name).
+    {
+      unfold parent_lookup in H1.
+      fold C0 in Hfind_class.
+      rewrite Hfind_class in H1.
+      rewrite H0 in H1.
+      inversion H1.
+      reflexivity.
+    }
+    fold bod.
+    fold sig1.
+    fold sig1 in sig2.
+    subst sig2.
+    fold C0 in Hcollect.
+    assert (fields = this_fields_def). {
+      eapply collect_fields_deterministic_rel with (C:=C0); eauto.
+    }
+    rewrite  H18.
+    exact H15. *)
+Admitted.
 
 Lemma constructor_lookup_wf : forall CT C ctor,
   wf_class_table CT ->
@@ -407,7 +518,12 @@ Proof.
     eapply Forall_nth_error; eauto.
   }
   inversion Hwf_class; subst.
-  destruct H0 as [Hwf_ctor _].
+  unfold wf_constructor.
+  admit.
+  (* repeat split. *)
+  (* admit. *)
+  (* 2:{} *)
+  destruct H2 as [Hwf_ctor _].
   assert (C0 = C) by (unfold C0; eapply find_class_cname_consistent; eauto).
   subst C0.
   unfold constructor_sig_lookup in Hctor_lookup.
@@ -416,9 +532,9 @@ Proof.
   injection Hctor_lookup as Hctor_eq.
   rewrite <- Hctor_eq.
   fold bod.
-  rewrite <- H.
+  rewrite <- H0.
   exact Hwf_ctor.
-Qed.
+Admitted.
 
 Lemma eval_stmt_preserves_heap_domain_simple : forall CT rΓ h stmt rΓ' h',
   eval_stmt OK CT rΓ h stmt OK rΓ' h' ->
@@ -664,7 +780,7 @@ Qed.
 Lemma typable_to_base_and_qualifier : forall CT rΓ h loc sqt rq_obj rc_obj,
   wf_r_typable CT rΓ h loc sqt ->
   r_type h loc = Some {| rqtype := rq_obj; rctype := rc_obj |} ->
-  rc_obj = sctype sqt /\
+  base_subtype CT rc_obj (sctype sqt) /\
   qualifier_typable rq_obj ( (sqtype sqt)).
 Proof.
   intros CT rΓ h loc sqt rq_obj rc_obj Hwf_typable Hrtype.
@@ -798,10 +914,11 @@ Proof.
       destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
       have Hclasstable := Hclass.
       unfold  wf_class_table in Hclass.
-      destruct Hclass as [Hclass Hcname_consistent].
+      destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
       repeat split.
       exact Hclass.
-
+      exact Hobj.
+      exact Hotherclasses.
       apply Hcname_consistent.
       apply Hcname_consistent.
       exact Hheap.
@@ -909,8 +1026,8 @@ Proof.
         {
           apply static_getType_dom in H14.
           exact H14.
-        }
-
+          
+          }
         assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
           eapply correspondence_to_typable; eauto.
         }
@@ -947,8 +1064,10 @@ Proof.
       rewrite <- H4 in H15.
       rewrite <- H15.
       rewrite H23.
+      admit.
+      admit.
       (* rewrite Heqmsig. *)
-      rewrite <- Hsubtype in H16.
+      (* rewrite <- Hsubtype in H16.
       simpl in mdeflookupcopy.
       assert (mdef = mdef0). 
       {
@@ -1441,6 +1560,11 @@ Proof.
     destruct (bound CT (rctype (rt_type obj))) as [class_def|] eqn:Hbound.
     - destruct Hwf_rtypeuse as [Hwf_rtypeuse _]. exact Hwf_rtypeuse.
     - contradiction.
+  } *)
+    }
+    admit.
+    admit.
+    admit.
   }
   - (* Case: stmt = Skip *)
     intros.
@@ -1454,10 +1578,14 @@ Proof.
     repeat split.
     + (* wellformed class *) 
     unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) exact Hheap.
     + (* Length of runtime environment greater than 0 *)
     simpl. rewrite length_app. simpl. lia.
@@ -1559,10 +1687,14 @@ Proof.
     repeat split.
     + (* wellformed class *) 
     unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) exact Hheap.
     + (* Length of runtime environment greater than 0 *)
       simpl. destruct Hsenv as [HsenvLength HsenvWellTyped].      
@@ -1716,10 +1848,14 @@ Proof.
     repeat split.
     + (* wellformed class *) 
     unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) 
     unfold wf_heap in *.
     intros ι0 Hdom.
@@ -1872,6 +2008,7 @@ Proof.
                     inversion H10;subst.
                     symmetry.
                     eapply collect_fields_consistent_through_runtime_static with (C:=(rctype (rt_type o)))(fields1:=Hlen_fields)(fields2:=fields)(fdef1:=b)(fdef2:=fieldT); eauto.
+                    admit.
                   }
 
                   subst b.
@@ -1887,8 +2024,9 @@ Proof.
                   (* Base type *)
                   apply qualified_type_subtype_base_subtype in H15.
                   simpl in H15.
-                  rewrite <- H15.
-                  exact Hxybase.
+                  admit.
+                  (* rewrite <- H15. *)
+                  (* exact Hxybase. *)
 
                   (* Qualifier *)
                   apply qualified_type_subtype_q_subtype in H15.
@@ -1947,16 +2085,18 @@ Proof.
                       destruct Hcorr as [Hbase_sub Hqual_typable].
                       inversion Hobj.
                       subst o_lx.
-                      rewrite Hbase_sub.
-                      exact H.
+                      admit.
+                      (* rewrite Hbase_sub. *)
+                      (* exact H. *)
                     }
                     subst b.
                     split.
                     + (* Base type equality *)
                       apply qualified_type_subtype_base_subtype in H15copy.
                       simpl in H15copy.
-                      rewrite <- H15copy.
-                      exact Hbase_y.
+                      admit.
+                      (* rewrite <- H15copy. *)
+                      (* exact Hbase_y. *)
                     + (* Qualifier typable *)
                       move H15 at bottom.
                       inversion H0.
@@ -2162,11 +2302,15 @@ Proof.
     destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     repeat split.
     + (* wellformed class *) 
-        unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    unfold  wf_class_table in Hclass. destruct Hclass as [Hclass _]. exact Hclass.
+    + (* Object wellformedness *)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [Hobject _]]. exact Hobject.
+    + (* All other classes have super class*)
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[Hotherclasses _]]]. exact Hotherclasses.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* Class identifier match*)
-    unfold  wf_class_table in Hclass. destruct Hclass as [_ Hclassnamematch]. apply Hclassnamematch.
+    unfold  wf_class_table in Hclass. destruct Hclass as [_ [_[_ Hclassnamematch]]]. apply Hclassnamematch.
     + (* wellformed heap *) 
     unfold wf_heap.
     intros ι0 Hι.
@@ -2312,8 +2456,9 @@ Proof.
         split.
           +
         destruct H as [Hrctype _].
-        rewrite Hrctype.
-        destruct (nth_error (cparams consig) i) as [paramtype|] eqn: Hparamtype.
+        admit.
+        (* rewrite Hrctype. *)
+        (* destruct (nth_error (cparams consig) i) as [paramtype|] eqn: Hparamtype.
         2:{
           apply nth_error_None in Hparamtype.
           assert (Hi_fdef : i < dom field_defs).
@@ -2335,7 +2480,7 @@ Proof.
         exact Hargtype.
         exact Hparamtype.
         exact Hparamtype.
-        exact Hfdef.
+        exact Hfdef. *)
           + 
           destruct H as [Hrctype Hqctype].
         destruct (nth_error (cparams consig) i) as [paramtype|] eqn: Hparamtype.
@@ -2576,7 +2721,7 @@ Proof.
     specialize (IHHeval1 eq_refl sΓ'0 sΓ Hwf H4) as IH1.
     specialize (IHHeval2 eq_refl sΓ' sΓ'0 IH1 H6) as IH2.
     exact IH2.
-Qed.
+Admitted.
 
 Definition get_this_type (sΓ : s_env) : option qualified_type :=
   match sΓ with
@@ -2666,6 +2811,7 @@ Proof.
           assert (Heq : a = Final).
         {
           eapply sf_assignability_deterministic_rel; eauto.
+          admit.
         }
         apply vpa_assingability_assign_cases in H20.
         destruct H20 as [HAassignable | HARDA ].
@@ -2680,6 +2826,7 @@ Proof.
         rewrite HAassignable in H17.
         assert (RDA = Assignable). {
           eapply sf_assignability_deterministic_rel; eauto.
+          admit.
         }
         discriminate.
         destruct HARDA as [HsqtypeMut _].
@@ -2769,9 +2916,11 @@ Proof.
     unfold wf_r_config in H13.
     destruct H13 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
     have Hclasstable := Hclass.
-    destruct Hclass as [Hclass Hcname_consistent].
+    destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
     repeat split.
     exact Hclass.
+    exact Hobj.
+    exact Hotherclasses.
     apply Hcname_consistent.
     apply Hcname_consistent.
     exact Hheap.
@@ -2909,7 +3058,9 @@ Proof.
     rewrite <- H21.
     rewrite Heqmsig.
     rewrite H29.
-    rewrite <- Hsubtype in H22.
+    admit.
+    admit.
+    (* rewrite <- Hsubtype in H22.
     simpl in mdeflookupcopy.
     assert (mdef = mdef0). 
     {
@@ -3145,7 +3296,12 @@ Proof.
     destruct (bound CT rc_obj) as [class_def|] eqn:Hbound.
     destruct Hwf_rtypeuse as [Hwf_rtypeuse _].
     exact Hwf_rtypeuse.
-    contradiction.
+    contradiction. *)
+  }
+  admit.
+  admit.
+  admit.
+  admit.
   -  (* Seq *) (* Apply IH transitively *)
   intros. inversion H2; subst. 
   specialize (eval_stmt_preserves_heap_domain_simple CT rΓ h s1 rΓ' h' H3_) as Hh'.
@@ -3156,7 +3312,7 @@ Proof.
   specialize (preservation_pico CT sΓ rΓ h s1 rΓ' h' sΓ'0 H1 H10 H3_) as Hwf'.
   specialize (IHeval_stmt2 H3 Heqok H5 vals' H4 values' Hrtype sΓ' sΓ'0 Hwf' H12). 
   rewrite IHeval_stmt2 in IHeval_stmt1; auto.
-Qed.
+Admitted.
 
 Theorem readonly_pico_field_write:
     forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs anyrq,
@@ -3213,7 +3369,7 @@ destruct Hassign_rel as [Hfinal | Hrda].
   inversion Hobj_before.
   rewrite H0 in base.
   simpl in base.
-  subst C.
+  (* subst C. *)
   assert (Hneq: anyf <> f).
   {
     intro Heq.
@@ -3224,10 +3380,10 @@ destruct Hassign_rel as [Hfinal | Hrda].
     assert (fdef_assign = fdef_final).
     {
       eapply field_lookup_deterministic_rel; eauto.
+      admit.
     }
     subst fdef_final.
-    rewrite Hassign_final in Hassign_assign.
-    discriminate.
+    rewrite Hassign_final in Hassign_assign.    discriminate.
   }
   injection Hobj_before as Hvals_eq.
   unfold update_field in Hobj_after.
@@ -3273,7 +3429,7 @@ destruct Hassign_rel as [Hfinal | Hrda].
   inversion Hobj_before.
   rewrite H0 in base.
   simpl in base.
-  subst C.
+  (* subst C. *)
   assert (Hneq: anyf <> f).
   {
     intro Heq.
@@ -3284,6 +3440,7 @@ destruct Hassign_rel as [Hfinal | Hrda].
     assert (fdef_assign = fdef_final).
     {
       eapply field_lookup_deterministic_rel; eauto.
+      admit.
     }
     subst fdef_final.
     rewrite Hassign_final in Hassign_assign.
@@ -3306,4 +3463,4 @@ destruct Hassign_rel as [Hfinal | Hrda].
   symmetry.
   apply update_diff.
   exact Hneq.
-Qed.
+Admitted.
