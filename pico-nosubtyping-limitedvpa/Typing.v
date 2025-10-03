@@ -646,6 +646,15 @@ Proof.
   eapply static_getType_list_preserves_length; eauto.
 Qed.
 
+Definition wf_constructor_object (CT : class_table) (C : class_name) (ctor : constructor_def) : Prop :=
+  parent_lookup CT C = None /\
+  constructor_def_lookup CT C = Some ctor /\
+  let sig := csignature ctor in
+  let q_c := cqualifier sig in
+  Some q_c = bound CT C /\
+  cparams sig = [] /\
+  CollectFields CT C [].
+
 Definition wf_constructor (CT : class_table) (c : class_name) (ctor : constructor_sig) : Prop :=
   (* 1. Constructor qualifier matches class bound *)
   bound CT c = Some (cqualifier ctor) /\
@@ -675,7 +684,14 @@ Definition wf_method (CT : class_table) (C : class_name) (mdef : method_def) : P
     let mbodyretvar := mreturn methodbody in
     mbodyretvar < dom sΓ' /\
     nth_error sΓ' mbodyretvar = Some mbodyrettype /\
-    qualified_type_subtype CT mbodyrettype (mret msig).
+    qualified_type_subtype CT mbodyrettype (mret msig) /\
+    (* Override constraint: if method exists in parent, signatures must match *)
+    (* Aosen: let's prove invariant override first *)
+    (forall parent_def parent mdef_parent,
+      find_class CT C = Some parent_def ->
+      super (signature parent_def) = Some parent ->
+      FindMethodWithName CT parent (mname msig) mdef_parent ->
+      msignature mdef_parent = msig).  
 
 (* Well-formedness of class *)
 Inductive wf_class : class_table -> class_def -> Prop :=
@@ -687,7 +703,7 @@ Inductive wf_class : class_table -> class_def -> Prop :=
   cdef.(body).(Syntax.fields) = [] ->
   cdef.(body).(methods) = [] ->
   cdef.(signature).(cname) = class_name ->
-  cdef.(body).(constructor).(csignature).(cparams) = [] ->
+  wf_constructor_object CT class_name cdef.(body).(constructor) ->
   Forall (wf_field CT) (cdef.(body).(Syntax.fields)) -> 
   NoDup (map (fun mdef => mname (msignature mdef)) (cdef.(body).(methods))) ->
   wf_class CT cdef
@@ -1443,41 +1459,6 @@ Proof.
       apply IH; auto.
 Qed.
 
-Lemma method_lookup_wf_class_by_find: forall CT C m mdef,
-  wf_class_table CT ->
-  C < dom CT ->
-  FindMethodWithName CT C m mdef ->
-  wf_method CT C mdef.
-Proof.
-  intros CT C m mdef Hwf_ct Hdom HfindMethod.
-  admit.
-  (* inversion HfindMethod; subst.
-  assert (Hwf_class : wf_class CT def).
-  {
-    unfold wf_class_table in Hwf_ct.
-    destruct Hwf_ct as [Hforall_wf _].
-    eapply Forall_nth_error; eauto.
-  }
-  inversion Hwf_class; subst.
-  
-  destruct H2 as [_ [Hforall_methods _]].
-  assert (HC0_eq : C0 = C).
-  {
-    unfold wf_class_table in Hwf_ct.
-    destruct Hwf_ct as [_ Hcname_consistent].
-    apply Hcname_consistent.
-    exact H.
-  }
-  rewrite HC0_eq in Hforall_methods.
-  unfold gget_method in H1.
-  eapply find_some in H1.
-  destruct H1 as [Hin _].
-  apply In_nth_error in Hin.
-  destruct Hin as [n Hnth].
-  eapply Forall_nth_error; eauto. *)
-
-Admitted.
-
 Lemma override_local_precedence : forall parent_methods own_methods m mdef,
   gget_method own_methods m = Some mdef ->
   gget_method (override parent_methods own_methods) m = Some mdef.
@@ -1487,4 +1468,95 @@ Proof.
   unfold gget_method in *.
   apply find_app.
   exact Hown.
+Qed.
+
+Lemma method_inheritance_exists : forall CT C D m mdef,
+  wf_class_table CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT D m mdef ->
+  exists mdef', FindMethodWithName CT C m mdef'.
+Proof.
+  intros CT C D m mdef Hwf_ct Hsub.
+  revert mdef.
+  induction Hsub; intros mdef Hfind.
+  - (* Reflexive *) exists mdef. exact Hfind.
+  - (* Transitive *)
+    assert (HD_dom : D < dom CT) by (eapply base_subtype_domain; eauto).
+    apply IHHsub2 in Hfind; auto.
+    destruct Hfind as [mdef_D HfindD].
+    apply IHHsub1 in HfindD; auto.
+  - (* Direct inheritance *)
+    assert (HC_dom : C < dom CT) by exact H.
+    destruct (find_class CT C) as [def|] eqn:HfindC; [|unfold parent_lookup in H1; rewrite HfindC in H1; discriminate].
+    destruct (gget_method (methods (body def)) m) as [mdef'|] eqn:Hget.
+    + exists mdef'. eapply FOM_Here; eauto.
+    + exists mdef. eapply FOM_Super; eauto.
+      unfold parent_lookup in H1. rewrite HfindC in H1. simpl in H1. exact H1.
+Qed.
+
+Lemma method_signature_consistent_subtype : forall CT C D m mdef1 mdef2,
+  wf_class_table CT ->
+  base_subtype CT C D ->
+  FindMethodWithName CT C m mdef1 ->
+  FindMethodWithName CT D m mdef2 ->
+  msignature mdef1 = msignature mdef2.
+Proof.
+  intros CT C D m mdef1 mdef2 Hwf_ct Hsub Hfind1 Hfind2.
+  generalize dependent mdef1. generalize dependent mdef2.
+  induction Hsub; intros.
+  - (* Reflexive *) 
+    assert (mdef1 = mdef2) by (eapply find_overriding_method_deterministic; eauto).
+    congruence.
+- (* Transitive *)
+  assert (HD_dom : D < dom CT) by (eapply base_subtype_domain; eauto).
+  (* Method m exists in E, and D <: E, so by inheritance m must exist in D *)
+  assert (Hexists_D : exists mdef_D, FindMethodWithName CT D m mdef_D).
+  {
+    eapply method_inheritance_exists; eauto.
+  }
+  destruct Hexists_D as [mdef_D HfindD].
+  assert (msignature mdef1 = msignature mdef_D) by (eapply IHHsub1; eauto).
+  assert (msignature mdef_D = msignature mdef2) by (eapply IHHsub2; eauto).
+  congruence.
+- (* Direct inheritance *)
+  assert (HC_dom : C < dom CT) by exact H.
+  destruct (find_class CT C) as [def|] eqn:Hfind; [|unfold parent_lookup in H1; rewrite Hfind in H1; discriminate].
+  assert (Hwf_class : wf_class CT def) by (unfold wf_class_table in Hwf_ct; destruct Hwf_ct as [Hforall _]; eapply Forall_nth_error; eauto).
+  inversion Hwf_class; subst.
+  + unfold parent_lookup in H1. rewrite Hfind in H1. simpl in H1. rewrite H2 in H1. discriminate.
+  + destruct H5 as [_ [Hforall_methods _]].
+    inversion Hfind1; subst.
+* (* mdef1 found locally in C *)
+  assert (Heq_def : def = def0) by (rewrite Hfind in H3; injection H3; auto).
+  subst def0.
+  assert (Hin1 : In mdef1 (methods (body def))).
+  { unfold gget_method in H6. apply find_some in H6. destruct H6. exact H5. }
+  apply In_nth_error in Hin1.
+  destruct Hin1 as [n Hn].
+  eapply Forall_nth_error in Hforall_methods; eauto.
+  unfold wf_method in Hforall_methods.
+  destruct Hforall_methods as [sΓ' [mbodyrettype [_ [_ [_ [_ Hoverride]]]]]].
+  unfold parent_lookup in H1. rewrite Hfind in H1. simpl in H1. symmetry.
+  eapply Hoverride.
+  -- assert (HC0_eq : C0 = C) by (unfold wf_class_table in Hwf_ct; destruct Hwf_ct as [_ [_ [_ Hcname]]]; apply Hcname; exact Hfind).
+     rewrite HC0_eq. exact Hfind.
+  -- unfold parent_lookup in H1. exact H1.
+  -- assert (Hm_eq : mname (msignature mdef1) = m) by (eapply find_method_with_name_consistent; eauto).
+     rewrite Hm_eq. exact Hfind2.
+  * (* mdef1 inherited from parent - use determinism *)
+    assert (Heq_def : def = def0) by (rewrite Hfind in H3; injection H3; auto).
+    subst def0.
+    assert (Heq_parent : parent = D).
+    {
+      unfold parent_lookup in H1.
+      rewrite Hfind in H1.
+      simpl in H1.
+      rewrite H7 in H1.
+      injection H1; auto.
+    }
+    subst parent.
+    assert (mdef1 = mdef2). {
+      eapply find_overriding_method_deterministic with (C:=D); eauto.
+    }
+    congruence.
 Qed.

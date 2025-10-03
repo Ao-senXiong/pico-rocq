@@ -401,33 +401,21 @@ Proof.
   (* Case analysis on class structure *)
   inversion Hwf_class; subst.
   - (* Object class case *)
-    (* inversion H4; subst. *)
     inversion Hcollect; subst.
     destruct (find_class CT C).
     easy.
     easy.
-    (* exfalso. *)
-    (* subst def. *)
-    rewrite H4.
-    easy.
-    admit.
-    (* rewrite Hfind_class in H3.
-    inversion H3.
-    subst cdef.
-    apply find_class_cname_consistent in Hfind_class.
-    rewrite Hfind_class in H3.
-    rewrite H13 in H3.
-    rewrite H14 in H3.
-    discriminate H3. exact Hwf_ct.
-    unfold parent_lookup in H3.
+    unfold wf_constructor_object in H4.
+    destruct H4 as [_  [_ Hcparams]].
+    destruct Hcparams as [_ [Hcparams _]].
+    rewrite Hcparams.
+    reflexivity.
+
     exfalso.
-    have Hfind_class_copy := Hfind_class.
-    apply find_class_cname_consistent in Hfind_class.
-    rewrite Hfind_class in H3.
-    rewrite Hfind_class_copy in H3.
-    rewrite H in H3.
+    assert (cdef = def) by (rewrite Hfind_class in H3; injection H3; auto).
+    subst def.
+    rewrite H in H7.
     discriminate.
-    exact Hwf_ct. *)
   - (* Regular class case with superclass *)
     destruct H2 as [Hwf_ctor [Hnodup_methods [Hforall_methods Hforall_fields]]].
 
@@ -436,68 +424,18 @@ Proof.
     {
       apply find_class_cname_consistent in Hfind_class; auto.
     }
-    admit.
-    (* Use the fact that superC < C
-    assert (Hsuper_lt : superC < C) by (rewrite <- Hcname_eq; exact H).
-
-    (* Apply induction hypothesis to superC *)
-    assert (Hsuper_dom : superC < dom CT) by lia.
-
-    (* Get superclass constructor and fields *)
-    assert (Hsuper_ctor_exists : exists super_ctor, constructor_def_lookup CT superC = Some super_ctor).
+    unfold wf_constructor in Hwf_ctor.
+    subst C0.
+    destruct Hwf_ctor as [_ [_ [field_defs [Hcollect_field_defs [Hparams_eq _]]]]].
+    assert (field_defs = fields).
     {
-      eapply constructor_def_lookup_Some; eauto.
+      eapply collect_fields_deterministic_rel; eauto.
+      rewrite Hcname_eq.
+      exact Hcollect.
     }
-    destruct Hsuper_ctor_exists as [super_ctor Hsuper_ctor_lookup].
-
-    assert (Hsuper_fields_exists : exists super_fields, CollectFields CT superC super_fields).
-    {
-      eapply collect_fields_exists; eauto.
-    }
-    destruct Hsuper_fields_exists as [super_fields Hsuper_collect].
-
-    have Hsuper_eq := IH superC Hsuper_lt Hsuper_dom super_ctor super_fields Hsuper_ctor_lookup Hsuper_collect.
-    inversion Hwf_ctor; subst.
-
-    (* Extract information about how fields are collected *)
-    inversion Hcollect; subst.
-    rewrite Hfind_class in H9. 
-    discriminate.
-    assert (cdef = def).
-    {
-      eapply find_class_consistent; eauto.
-    }
-    subst cdef.
-    rewrite H0 in H10.
-    discriminate.
-    fold bod.
-    fold sig2.
-    unfold parent_lookup in H1.
-    fold C0 in H9.
-    rewrite H9 in H1.
-    rewrite H10 in H1.
-    discriminate.
-
-    assert (superC = superclass_name).
-    {
-      unfold parent_lookup in H1.
-      fold C0 in Hfind_class.
-      rewrite Hfind_class in H1.
-      rewrite H0 in H1.
-      inversion H1.
-      reflexivity.
-    }
-    fold bod.
-    fold sig1.
-    fold sig1 in sig2.
-    subst sig2.
-    fold C0 in Hcollect.
-    assert (fields = this_fields_def). {
-      eapply collect_fields_deterministic_rel with (C:=C0); eauto.
-    }
-    rewrite  H18.
-    exact H15. *)
-Admitted.
+    subst field_defs.
+    exact Hparams_eq.
+Qed.
 
 Lemma constructor_lookup_wf : forall CT C ctor,
   wf_class_table CT ->
@@ -519,10 +457,28 @@ Proof.
   }
   inversion Hwf_class; subst.
   unfold wf_constructor.
-  admit.
-  (* repeat split. *)
-  (* admit. *)
-  (* 2:{} *)
+  unfold wf_constructor.
+  unfold wf_constructor_object in H4.
+  destruct H4 as [Hbound [H2314 [Hcparams [Hcollect_fields H2341]]]].
+  assert (Hcname: cname (signature cdef) = C).
+  { eapply find_class_cname_consistent; eauto. }
+  unfold constructor_sig_lookup in Hctor_lookup.
+  unfold constructor_def_lookup in Hctor_lookup.
+  rewrite Hfind_class in Hctor_lookup.
+  injection Hctor_lookup as Hctor_eq.
+  subst ctor.
+  simpl.
+  repeat split.
+  - rewrite Hcname in Hcparams. symmetry. exact Hcparams.
+  - rewrite Hcollect_fields. constructor.
+  - exists (@nil field_def).
+  split.
+  -- rewrite Hcname in H2341. exact H2341.
+  -- split.
+  + rewrite Hcollect_fields. reflexivity.
+  + rewrite Hcollect_fields. constructor.
+  -
+
   destruct H2 as [Hwf_ctor _].
   assert (C0 = C) by (unfold C0; eapply find_class_cname_consistent; eauto).
   subst C0.
@@ -534,7 +490,7 @@ Proof.
   fold bod.
   rewrite <- H0.
   exact Hwf_ctor.
-Admitted.
+Qed.
 
 Lemma eval_stmt_preserves_heap_domain_simple : forall CT rΓ h stmt rΓ' h',
   eval_stmt OK CT rΓ h stmt OK rΓ' h' ->
@@ -957,10 +913,22 @@ Proof.
     destruct H1 as [mdeflookup getmbody].
     remember (msignature mdef) as msig.
     have mdeflookupcopy := mdeflookup.
-    apply method_lookup_wf_class_by_find in mdeflookup; auto.
-    inversion mdeflookup; revert getmbody; subst.
-    intro getmbody.
-    destruct H1 as [sΓmethodend Htyping_method].
+    have Hwfcopy := Hwf.
+    unfold wf_r_config in Hwf.
+    destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+    (* apply method_lookup_wf_class_by_find in mdeflookup; auto. *)
+    inversion mdeflookup; revert getmbody; subst; intro getmbody.
+    assert (wf_method CT cy mdef).
+    {
+      eapply method_lookup_wf_class; eauto.
+      eapply r_basetype_in_dom; eauto.
+      unfold gget_method in H3.
+      apply find_some in H3.
+      destruct H3.
+      exact H2.
+    }
+    inversion H2; subst.
+    destruct H5 as [mrettype Htyping_method].
     destruct Htyping_method as [Htyping_method Hmethodret].
     remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
     remember {| vars := Iot ly :: vals |} as rΓmethodinit.
@@ -975,10 +943,7 @@ Proof.
     remember (rΓ <| vars := update x retval (vars rΓ) |>) as rΓ'''.
     assert(Hwf_method_frame : wf_r_config CT sΓmethodinit rΓmethodinit h).
     { (* Method inner config wellformed.*)
-      have Hwfcopy := Hwf.
-      unfold wf_r_config in Hwf.
-      unfold wf_r_config.
-      destruct Hwf as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
+
       have Hclasstable := Hclass.
       unfold  wf_class_table in Hclass.
       destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
@@ -1130,18 +1095,15 @@ Proof.
       rewrite <- H4 in H15.
       rewrite <- H15.
       rewrite H23.
-      admit.
-      admit.
-      (* rewrite Heqmsig. *)
-      (* rewrite <- Hsubtype in H16.
-      simpl in mdeflookupcopy.
-      assert (mdef = mdef0). 
+      assert (Hsigeq: msignature mdef = msignature mdef0).
       {
-        eapply find_overriding_method_deterministic; eauto.
+        eapply method_signature_consistent_subtype; eauto.
       }
-      rewrite H0.
+      rewrite <- Hsigeq in H21.
+      rewrite <- Hsigeq in H22.
+      rewrite <- Hsigeq in H23.
+      rewrite Hsigeq.
       reflexivity.
-
 
       intros i Hi sqt Hnth.
       rewrite HeqsΓmethodinit in Hnth, Hi.
@@ -1207,19 +1169,17 @@ Proof.
         destruct Hcorr as [Hsubtype _].
         simpl in Hobj_ly.
         injection Hobj_ly as Hobjy_eq.
+        assert (msignature mdef = msignature mdef0).
+        {
+          eapply method_signature_consistent_subtype; eauto.
+        }
+        rewrite <- H0 in H21.
+        rewrite <- H0 in H22.
+        rewrite <- H0 in H23.
+        subst objy.
+        eapply base_trans; eauto.
 
-       
-      rewrite <- Hsubtype in H16.
-      simpl in mdeflookupcopy.
-      assert (heqm : mdef = mdef0). 
-      {
-        eapply find_overriding_method_deterministic; eauto.
-      }
-      subst objy.
-      simpl.
-      rewrite heqm.
-      rewrite <- Hsubtype in H22.
-      exact H22.
+  
       apply qualified_type_subtype_q_subtype in H22.
       assert (Hy_dom : y < dom sΓ').
         {
@@ -1256,15 +1216,16 @@ Proof.
         destruct Hcorr as [Hsubtype Hqualifier].
         simpl in Hobj_ly.
         injection Hobj_ly as Hobjy_eq.
-      rewrite <- Hsubtype in H16.
-      simpl in mdeflookupcopy.
-      assert (heqm : mdef = mdef0). 
-      {
-        eapply find_overriding_method_deterministic; eauto.
-      }
-      subst mdef0.
+      assert (msignature mdef = msignature mdef0).
+        {
+          eapply method_signature_consistent_subtype; eauto.
+        }
+        rewrite <- H0 in H21.
+        rewrite <- H0 in H22.
+        rewrite <- H0 in H23.
       rewrite <- Hobjy_eq.
       simpl.
+       
       eapply qualifier_typable_subtype_receiver; eauto.
 
 (* -------------------------------------------------- *)
@@ -1301,13 +1262,15 @@ Proof.
         simpl in Hcorr.
         (* destruct (r_muttype h iot) as [q|] eqn:Hmut; [|contradiction *)
         destruct Hcorr as [Hsubtype Hqualifier].
-        rewrite <- Hsubtype in H16.
+        (* rewrite <- Hsubtype in H16. *)
 
-        assert (heqm : mdef = mdef0). 
+              assert (msignature mdef = msignature mdef0).
         {
-          eapply find_overriding_method_deterministic; eauto.
+          eapply method_signature_consistent_subtype; eauto.
         }
-        subst mdef0.
+        rewrite <- H0 in H21.
+        rewrite <- H0 in H22.
+        rewrite <- H0 in H23.
 
         simpl.
         unfold runtime_getVal.
@@ -1349,37 +1312,33 @@ Proof.
           simpl in Hnth.
           lia.
     }
+    rename x0 into sΓmethodend.
     assert (wf_r_config CT sΓmethodend rΓ'' h'). 
     {
       eapply IHHeval with (sΓ := sΓmethodinit) (sΓ' := sΓmethodend); eauto.
-      unfold mbodystmt in Htyping_method.
-      unfold methodbody in Htyping_method.
-      subst msig0.
-      fold sΓ in HeqsΓmethodinit.
-      rewrite <- HeqsΓmethodinit in Htyping_method.
-      rewrite <- getmbody in Htyping_method.
-
-      exact Htyping_method.
     }
+    
     { (* Method call resulting config is wellformed *)
-      have H1copy := H1.
-      unfold wf_r_config in H1.
+      have H5copy := H5.
       unfold wf_r_config.
-      unfold wf_r_config in Hwf.
-      destruct Hwf as [_ [Hheapinit [Hrenvinit [Hsenvinit [Hleninit Hcorrinit]]]]].
-      unfold wf_renv in Hrenvinit.
-      destruct Hrenvinit as [HrEnvLen [Hreceiver Hrenvval]].
-      destruct H1 as [Hclass [Hheap [Hrenv [Hsenv [Hlen Hcorr]]]]].
-      destruct Hclass as [Hclass Hcname_consistent].
+      unfold wf_r_config in H5.
+      destruct H5 as [_ [Hheapinit [Hrenvinit [Hsenvinit [Hleninit Hcorrinit]]]]].
+      unfold wf_renv in Hrenv.
+      destruct Hrenv as [HrEnvLen [Hreceiver Hrenvval]].
+      destruct Hclass as [Hclass_ [Hobj_ [Hcname_consistent_ Hfind_consistent_]]].
       repeat split.
-      exact Hclass.
-      apply Hcname_consistent.
-      apply Hcname_consistent.
-      exact Hheap.
+      exact Hclass_.
+      exact Hobj_.
+      apply Hcname_consistent_.
+      apply Hfind_consistent_.
+      apply Hfind_consistent_.
+      exact Hheapinit.
       rewrite HeqrΓ'''.
       simpl.
       rewrite update_length.
       simpl.
+      (* unfold wf_renv in Hrenv. *)
+      (* destruct Hrenv as [Hrenvdom Hreceiveroutter]. *)
       lia.
       destruct Hreceiver as [iot [Hget_iot Hiot_dom]].
       exists iot.
@@ -1396,13 +1355,8 @@ Proof.
       easy.
       simpl.
       reflexivity.
-      unfold mbodystmt in Htyping_method.
-      unfold methodbody in Htyping_method.
-      subst msig0.
-      fold sΓ in HeqsΓmethodinit.
-      rewrite <- HeqsΓmethodinit in Htyping_method.
-      rewrite <- getmbody in Htyping_method.
-      have Hdom_le := eval_stmt_preserves_heap_domain_simple CT rΓmethodinit h (mbody_stmt mbody) rΓ'' h' Heval.
+      (* rewrite <- getmbody in Htyping_method. *)
+      have Hdom_le := eval_stmt_preserves_heap_domain_simple CT rΓmethodinit h (mbody_stmt (mbody mdef)) rΓ'' h' Heval.
       lia.
 
       (* Outter runtime env is wellformed*)
@@ -1413,13 +1367,8 @@ Proof.
       intros v Hv.
       destruct v as [|loc]; [trivial|].
       destruct (runtime_getObj h loc) as [obj|] eqn:Hobjloc; [|contradiction].
-            unfold mbodystmt in Htyping_method.
-      unfold methodbody in Htyping_method.
-      subst msig0.
-      fold sΓ in HeqsΓmethodinit.
-      rewrite <- HeqsΓmethodinit in Htyping_method.
-      rewrite <- getmbody in Htyping_method.
-      have Hdom_le := eval_stmt_preserves_heap_domain_simple CT rΓmethodinit h (mbody_stmt mbody) rΓ'' h' Heval.
+      (* rewrite <- getmbody in Htyping_method. *)
+      have Hdom_le := eval_stmt_preserves_heap_domain_simple CT rΓmethodinit h (mbody_stmt (mbody mdef)) rΓ'' h' Heval.
       assert (Hloc_dom : loc < dom h) by (apply runtime_getObj_dom in Hobjloc; exact Hobjloc).
       assert (Hloc_dom' : loc < dom h') by lia.
       destruct (runtime_getObj h' loc) as [obj'|] eqn:Hobj'.
@@ -1427,23 +1376,23 @@ Proof.
       exfalso. apply runtime_getObj_not_dom in Hobj'. lia.
       unfold runtime_getVal in H6.
       destruct retval as [|loc]; [trivial|].
-      unfold wf_renv in Hrenv.
-      destruct Hrenv as [_ [_ Hrenv_wf]].
+      unfold wf_renv in Hrenvinit.
+      destruct Hrenvinit as [_ [_ Hrenv_wf]].
       eapply Forall_nth_error in Hrenv_wf; eauto.
       simpl in Hrenv_wf.
       destruct (runtime_getObj h' loc) as [obj|] eqn:Hobjloc; [trivial|].
       contradiction.
       apply static_getType_dom in H13.
-      rewrite Hleninit in H13.
+      rewrite Hlen in H13.
       exact H13.
 
-      rewrite Hleninit.
+      rewrite Hlen.
       exact HrEnvLen.
-      unfold wf_senv in Hsenvinit.
-      destruct Hsenvinit as [Hsenvpdom Hsenvptypeuse].
+      unfold wf_senv in Hsenv.
+      destruct Hsenv as [Hsenvpdom Hsenvptypeuse].
       exact Hsenvptypeuse.
 
-      rewrite Hleninit.
+      rewrite Hlen.
       rewrite HeqrΓ'''.
       simpl.
       rewrite update_length.
@@ -1458,7 +1407,7 @@ Proof.
         unfold runtime_getVal.
         rewrite update_same.
         + apply static_getType_dom in H13.
-          rewrite Hleninit in H13.
+          rewrite Hlen in H13.
           exact H13.
         + (* Show wf_r_typable for retval *)
           assert (Hnth_x : nth_error sΓ' x = Some Tx).
@@ -1472,25 +1421,24 @@ Proof.
           (* Use the fact that retval is well-typed from method return *)
           unfold runtime_getVal in H6.
           destruct retval as [|loc]; [trivial|].
-          assert (Hret_dom : mreturn mbody < dom (vars rΓ'')).
+          assert (Hret_dom : mreturn (mbody mdef) < dom (vars rΓ'')).
           {
             apply nth_error_Some.
             rewrite H6.
             discriminate.
           }
-          rewrite <- Hlen in Hret_dom.
+          rewrite <- Hleninit in Hret_dom.
           assert (wf_class_table CT). {
-            unfold wf_class_table.
-            split.
-            exact Hclass.
-            exact Hcname_consistent.
+            unfold wf_r_config in H5copy.
+            destruct H5copy as [Hclass1 _].
+            exact Hclass1.
           }
           destruct Hmethodret as [Hmbodyretvar_dom [Hnth_mbodyret Hsubtype_ret]].
-          unfold methodbody0 in Hnth_mbodyret.
-          rewrite <- getmbody in Hnth_mbodyret.
+          (* unfold methodbody0 in Hnth_mbodyret. *)
+          (* rewrite <- getmbody in Hnth_mbodyret. *)
           have Hcorr_copy := Hcorr.
-          specialize (Hcorr (mreturn mbody) Hret_dom mbodyrettype Hnth_mbodyret).
-          destruct (runtime_getVal rΓ'' (mreturn mbody)) eqn: Hmet_val; [|easy].
+          specialize (Hcorrinit (mreturn (mbody mdef)) Hret_dom mrettype Hnth_mbodyret).
+          destruct (runtime_getVal rΓ'' (mreturn (mbody mdef))) eqn: Hmet_val; [|easy].
           destruct v.
           2:{
             unfold runtime_getVal in Hmet_val.
@@ -1500,78 +1448,72 @@ Proof.
             unfold r_type.
             unfold runtime_getObj.
             subst loc.
-            unfold wf_r_typable in Hcorr.
-            unfold r_type in Hcorr.
-            unfold runtime_getObj in Hcorr.
-            destruct (nth_error h' l).
-            2:{easy.
+            unfold wf_r_typable in Hcorrinit.
+            unfold r_type in Hcorrinit.
+            unfold runtime_getObj in Hcorrinit.
+            destruct (nth_error h' l) eqn: Hobjh'.
+            2:{
+              easy.
             }
-            destruct Hcorr as [Hrorettypebase Hrorettypequalifier].
+            destruct Hcorrinit as [Hrorettypebase Hrorettypequalifier].
             split.
+            destruct Hsubtype_ret as [Hsubtype_ret Hmethodoveride].
             apply qualified_type_subtype_base_subtype in Hsubtype_ret.
-            rewrite <- Hrorettypebase in Hsubtype_ret.
-            fold msig0 in msig1.
-            subst msig1.
             apply qualified_type_subtype_base_subtype in H21.
-            rewrite <- H21.
-            rewrite Hsubtype_ret.
-            unfold msig0.
             unfold r_type in Hcorr_copy.
             assert (Hy_dom : y < dom sΓ').
-        {
-          apply static_getType_dom in H14.
-          exact H14.
-        }
-
-        assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
-          eapply correspondence_to_typable; eauto.
-        }
-        unfold wf_r_typable in Hytypable.
-        unfold r_type in Hytypable.
-        unfold r_basetype in H0.
-        destruct (runtime_getObj h ly).
-        2:{easy.
-        }
-        destruct Hytypable as [HyBasetype _].
-        inversion H0.
-        rewrite H3 in HyBasetype.
-        rewrite HyBasetype in mdeflookupcopy. 
-            assert (mdef = mdef0). 
             {
-              eapply find_overriding_method_deterministic; eauto.
+              apply static_getType_dom in H14.
+              exact H14.
             }
-            subst mdef.
-            reflexivity.
+
+            assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
+              eapply correspondence_to_typable; eauto.
+            }
+            unfold wf_r_typable in Hytypable.
+            unfold r_type in Hytypable.
+            unfold r_basetype in H0.
+            destruct (runtime_getObj h ly) eqn: Hobjly.
+            2:{easy.
+            }
+            destruct Hytypable as [HyBasetype _].
+            inversion H0.
+            assert (msignature mdef = msignature mdef0).
+            {
+              subst cy.
+              eapply method_signature_consistent_subtype; eauto.
+            }
+            rewrite <- H7 in H21.
+            eapply base_trans; eauto.
+            eapply base_trans; eauto.
+
             eapply qualified_type_subtype_q_subtype in H21.
-            fold msig0 in msig1.
-            subst msig1.
             eapply qualifier_typable_trans_subtype; [exact Hrorettypequalifier| | exact H21].
+            destruct Hsubtype_ret as [Hsubtype_ret _].
             apply qualified_type_subtype_q_subtype in Hsubtype_ret.
-            unfold msig0 in Hsubtype_ret.
             assert (Hy_dom : y < dom sΓ').
-        {
-          apply static_getType_dom in H14.
-          exact H14.
-        }
-
-        assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
-          eapply correspondence_to_typable; eauto.
-        }
-        unfold wf_r_typable in Hytypable.
-        unfold r_type in Hytypable.
-        unfold r_basetype in H0.
-        destruct (runtime_getObj h ly).
-        2:{easy.
-        }
-        destruct Hytypable as [HyBasetype _].
-        inversion H0.
-        rewrite H3 in HyBasetype.
-        rewrite HyBasetype in mdeflookupcopy. 
-            assert (mdef = mdef0). 
             {
-              eapply find_overriding_method_deterministic; eauto.
+              apply static_getType_dom in H14.
+              exact H14.
             }
-            subst mdef.
+
+            assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
+              eapply correspondence_to_typable; eauto.
+            }
+            unfold wf_r_typable in Hytypable.
+            unfold r_type in Hytypable.
+            unfold r_basetype in H0.
+            destruct (runtime_getObj h ly).
+            2:{easy.
+            }
+            destruct Hytypable as [HyBasetype _].
+            inversion H0.
+            assert (msignature mdef = msignature mdef0).
+            {
+              subst cy. 
+              eapply method_signature_consistent_subtype; eauto.
+            }
+            rewrite <- H7.
             exact Hsubtype_ret.
           }
           unfold runtime_getVal in Hmet_val.
@@ -1582,12 +1524,12 @@ Proof.
         simpl.
         unfold runtime_getVal.
         rewrite update_diff; [symmetry; exact Hneq|].
-        specialize (Hcorrinit i Hi sqt Hnth).
-        unfold runtime_getVal in Hcorrinit.
-        destruct (nth_error (vars rΓ) i) as [v|] eqn:Hgetval; [|exact Hcorrinit].
+        specialize (Hcorr i Hi sqt Hnth).
+        unfold runtime_getVal in Hcorr.
+        destruct (nth_error (vars rΓ) i) as [v|] eqn:Hgetval; [|exact Hcorr].
         destruct v as [|loc]; [trivial|].
         (* Need to show wf_r_typable is preserved when changing runtime environment and heap *)
-        unfold wf_r_typable in Hcorrinit |- *.
+        unfold wf_r_typable in Hcorr |- *.
         destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
         assert (Hrtype_preserved : r_type h' loc = Some rqt).
         {
@@ -1604,30 +1546,616 @@ Proof.
           easy.
           simpl.
           rewrite Hrtype_preserved.
-          exact Hcorrinit.
+          exact Hcorr.
         }
-    } *)
     }
-    admit.
-    unfold wf_r_config in Hwf.
-    destruct Hwf as [Hwf_classtable _].
-    exact Hwf_classtable.
-    unfold wf_r_config in Hwf.
-    destruct Hwf as [Hclass [Hheap _]].
-    unfold wf_heap in Hheap.
-    unfold r_basetype in H0.
-    destruct (runtime_getObj h ly) as [obj|] eqn:Hobj; [|discriminate].
-    injection H0 as Hcy_eq.
-    subst cy.
-    assert (Hly_dom : ly < dom h) by (apply runtime_getObj_dom in Hobj; exact Hobj).
-    specialize (Hheap ly Hly_dom).
-    unfold wf_obj in Hheap.
-    rewrite Hobj in Hheap.
-    destruct Hheap as [Hwf_rtypeuse _].
-    unfold wf_rtypeuse in Hwf_rtypeuse.
-    destruct (bound CT (rctype (rt_type obj))) as [class_def|] eqn:Hbound.
-    - destruct Hwf_rtypeuse as [Hwf_rtypeuse _]. exact Hwf_rtypeuse.
-    - contradiction.
+    assert (exists D ddef, base_subtype CT cy D /\ find_class CT D = Some ddef /\ In mdef (methods (body ddef)) /\ wf_method CT D mdef).
+    {
+      eapply method_lookup_in_wellformed_inherited; eauto.
+      eapply r_basetype_in_dom; eauto.
+    }
+    destruct H2 as [D H2].
+    destruct H2 as [ddef H2].
+    destruct H2 as [Hbasecyd [HfindD [HmdefinD H2]]].
+
+    inversion H2; subst.
+    destruct H8 as [mrettype Htyping_method].
+    destruct Htyping_method as [Htyping_method Hmethodret].
+    remember (mreceiver (msignature mdef) :: mparams (msignature mdef)) as sΓmethodinit.
+    remember {| vars := Iot ly :: vals |} as rΓmethodinit.
+    destruct (r_muttype h ly) eqn: Hinnerthis.
+    2:{
+      unfold r_muttype in Hinnerthis.
+      unfold r_basetype in H0.
+      destruct (runtime_getObj h ly).
+      discriminate Hinnerthis.
+      discriminate H0.
+    }
+    remember (rΓ <| vars := update x retval (vars rΓ) |>) as rΓ'''.
+    assert(Hwf_method_frame : wf_r_config CT sΓmethodinit rΓmethodinit h).
+    { (* Method inner config wellformed.*)
+
+      have Hclasstable := Hclass.
+      unfold  wf_class_table in Hclass.
+      destruct Hclass as [Hclass [Hobj [Hotherclasses Hcname_consistent]]].
+      repeat split.
+      exact Hclass.
+      exact Hobj.
+      exact Hotherclasses.
+      apply Hcname_consistent.
+      apply Hcname_consistent.
+      exact Hheap.
+      rewrite HeqrΓmethodinit.
+      simpl.
+      lia.
+      unfold wf_renv in Hrenv.
+      destruct Hrenv as [HrEnvLen [Hreceiverval Hallvals]].
+      exists ly.
+      split.
+      rewrite HeqrΓmethodinit.
+      simpl.
+      reflexivity.
+      unfold runtime_getVal in H.
+      destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+      injection H as H1_eq.
+      subst v.
+      eapply Forall_nth_error in Hallvals; eauto.
+      simpl in Hallvals.
+      destruct (runtime_getObj h ly) as [obj|] eqn:Hobjly; [|contradiction].
+      apply runtime_getObj_dom in Hobjly.
+      exact Hobjly.
+
+      (* Inner runtime env is wellformed*)
+      rewrite HeqrΓmethodinit.
+      simpl.
+      constructor.
+      simpl.
+      unfold runtime_getVal in H.
+      destruct (nth_error (vars rΓ) y) as [v|] eqn:Hnth_y; [|discriminate].
+      injection H as H1_eq.
+      subst v.
+      unfold runtime_getVal in Hnth_y.
+      unfold wf_renv in Hrenv.
+      destruct Hrenv as [_ [_ Hallvals]].
+      eapply Forall_nth_error in Hallvals; eauto.
+      simpl in Hallvals.
+      exact Hallvals.
+      eapply runtime_lookup_list_preserves_wf_values; eauto.
+
+      rewrite HeqsΓmethodinit.
+      simpl.
+      lia.
+
+      (* Inner static env's elements are wellformed typeuse *)
+      rewrite HeqsΓmethodinit.
+      constructor.
+      subst.
+      assert (parent < dom CT). {
+        assert (cy < dom CT). {
+          eapply find_class_dom; eauto.
+        }
+        assert (parent < cy). {
+          eapply parent_implies_strict_ordering with (C:= cy) (D:=parent); eauto.
+        }
+        lia.
+      }
+      (* Receiver type is well-formed *)
+      eapply method_sig_wf_receiver_by_find; eauto.
+
+      assert (parent < dom CT). {
+        assert (cy < dom CT). {
+          eapply find_class_dom; eauto.
+        }
+        assert (parent < cy). {
+          eapply parent_implies_strict_ordering with (C:= cy) (D:=parent); eauto.
+        }
+        lia.
+      }
+      eapply method_sig_wf_parameters_by_find; eauto.
+
+      apply static_getType_list_preserves_length in H15.
+      apply runtime_lookup_list_preserves_length in H4.
+      rewrite HeqsΓmethodinit.
+      rewrite HeqrΓmethodinit.
+      simpl.
+      f_equal.
+      apply Forall2_length in H23.
+        assert (Hy_dom : y < dom sΓ').
+        {
+          apply static_getType_dom in H14.
+          exact H14.
+          
+          }
+        assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
+          eapply correspondence_to_typable; eauto.
+        }
+
+        (* Apply correspondence to get wf_r_typable *)
+        specialize (Hcorr y Hy_dom Ty H14).
+        rewrite H in Hcorr.
+
+        (* Extract subtyping from wf_r_typable *)
+        unfold wf_r_typable in Hcorr.
+        unfold r_basetype in H0.
+        destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
+        injection H0 as Hcy_eq.
+        subst cy.
+        destruct obj as [rt_obj fields_obj].
+        destruct rt_obj as [rq_obj rc_obj].
+
+
+        unfold wf_renv in Hrenv.
+        destruct Hrenv as [_ [Hreceiver _]].
+        destruct Hreceiver as [iot [Hget_iot _]].
+        unfold get_this_var_mapping.
+        unfold gget in Hget_iot.
+        destruct (vars rΓ) as [|v0 vs] eqn:Hvars; [discriminate|].
+        injection Hget_iot as Hv0_eq.
+        subst v0.
+
+        unfold r_type in Hcorr.
+        rewrite Hobjy in Hcorr.
+        simpl in Hcorr.
+        (* destruct (r_muttype h iot) as [q|] eqn:Hmut; [|contradiction]. *)
+        destruct Hcorr as [Hsubtype _].
+       
+      rewrite <- H4 in H15.
+      rewrite <- H15.
+      rewrite H23.
+      assert (Hsigeq: msignature mdef = msignature mdef0).
+      {
+        eapply method_signature_consistent_subtype; eauto.
+      }
+      rewrite <- Hsigeq in H21.
+      rewrite <- Hsigeq in H22.
+      rewrite <- Hsigeq in H23.
+      rewrite Hsigeq.
+      reflexivity.
+
+      intros i Hi sqt Hnth.
+      rewrite HeqsΓmethodinit in Hnth, Hi.
+      rewrite HeqrΓmethodinit.
+      simpl in *.
+      destruct i as [|i'].
+      (* Reciever *)
+      simpl in Hnth.
+      injection Hnth as Hsqt_eq.
+      subst sqt.
+      simpl.
+      unfold wf_r_typable.
+      unfold r_type.
+      destruct (runtime_getObj h ly) as [objy|] eqn:Hobj_ly.
+      2:{
+        unfold r_basetype in H0.
+        rewrite Hobj_ly in H0.
+        discriminate.
+      }
+      (* Get the runtime type *)
+      simpl.
+      destruct (r_muttype h ly) as [qy|] eqn:Hq_ly.
+      2:{
+        unfold r_muttype in Hq_ly.
+        rewrite Hobj_ly in Hq_ly.
+        discriminate.
+      }
+      split.
+      apply qualified_type_subtype_base_subtype in H22.
+      (* rewrite vpa_qualified_type_sctype in H22. *)
+      assert (Hy_dom : y < dom sΓ').
+        {
+          apply static_getType_dom in H14.
+          exact H14.
+        }
+
+      specialize (Hcorr y Hy_dom Ty H14).
+              (* Extract subtyping from wf_r_typable *)
+        unfold wf_r_typable in Hcorr.
+        unfold r_basetype in H0.
+        unfold r_type.
+        destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
+        injection H0 as Hcy_eq.
+        subst cy.
+        destruct obj as [rt_obj fields_obj].
+        destruct rt_obj as [rq_obj rc_obj].
+
+
+        unfold wf_renv in Hrenv.
+        destruct Hrenv as [_ [Hreceiver _]].
+        destruct Hreceiver as [iot [Hget_iot _]].
+        unfold get_this_var_mapping.
+        unfold gget in Hget_iot.
+        destruct (vars rΓ) as [|v0 vs] eqn:Hvars; [discriminate|].
+        injection Hget_iot as Hv0_eq.
+        subst v0.
+
+        unfold r_type in Hcorr.
+        rewrite H in Hcorr.
+        rewrite Hobjy in Hcorr.
+        simpl in Hcorr.
+        (* destruct (r_muttype h iot) as [q|] eqn:Hmut; [|contradiction]. *)
+        destruct Hcorr as [Hsubtype _].
+        simpl in Hobj_ly.
+        injection Hobj_ly as Hobjy_eq.
+        assert (msignature mdef = msignature mdef0).
+        {
+          eapply method_signature_consistent_subtype; eauto.
+        }
+        rewrite <- H0 in H21.
+        rewrite <- H0 in H22.
+        rewrite <- H0 in H23.
+        subst objy.
+        eapply base_trans; eauto.
+
+  
+      apply qualified_type_subtype_q_subtype in H22.
+      assert (Hy_dom : y < dom sΓ').
+        {
+          apply static_getType_dom in H14.
+          exact H14.
+        }
+
+      specialize (Hcorr y Hy_dom Ty H14).
+        (* Extract subtyping from wf_r_typable *)
+        unfold wf_r_typable in Hcorr.
+        unfold r_basetype in H0.
+        unfold r_type.
+        destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
+        injection H0 as Hcy_eq.
+        subst cy.
+        destruct obj as [rt_obj fields_obj].
+        destruct rt_obj as [rq_obj rc_obj].
+
+
+        unfold wf_renv in Hrenv.
+        destruct Hrenv as [_ [Hreceiver _]].
+        destruct Hreceiver as [iot [Hget_iot _]].
+        unfold get_this_var_mapping.
+        unfold gget in Hget_iot.
+        destruct (vars rΓ) as [|v0 vs] eqn:Hvars; [discriminate|].
+        injection Hget_iot as Hv0_eq.
+        subst v0.
+
+        unfold r_type in Hcorr.
+        rewrite H in Hcorr.
+        rewrite Hobjy in Hcorr.
+        simpl in Hcorr.
+        (* destruct (r_muttype h iot) as [q|] eqn:Hmut; [|contradiction]. *)
+        destruct Hcorr as [Hsubtype Hqualifier].
+        simpl in Hobj_ly.
+        injection Hobj_ly as Hobjy_eq.
+      assert (msignature mdef = msignature mdef0).
+        {
+          eapply method_signature_consistent_subtype; eauto.
+        }
+        rewrite <- H0 in H21.
+        rewrite <- H0 in H22.
+        rewrite <- H0 in H23.
+      rewrite <- Hobjy_eq.
+      simpl.
+       
+      eapply qualifier_typable_subtype_receiver; eauto.
+
+(* -------------------------------------------------- *)
+      apply qualified_type_subtype_q_subtype in H22.
+        assert (Hy_dom : y < dom sΓ').
+        {
+          apply static_getType_dom in H14.
+          exact H14.
+        }
+        specialize (Hcorr y Hy_dom Ty H14).
+        (* Extract subtyping from wf_r_typable *)
+        unfold wf_r_typable in Hcorr.
+        unfold r_basetype in H0.
+        unfold r_type.
+        destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
+        injection H0 as Hcy_eq.
+        subst cy.
+        destruct obj as [rt_obj fields_obj].
+        destruct rt_obj as [rq_obj rc_obj].
+
+
+        unfold wf_renv in Hrenv.
+        destruct Hrenv as [_ [Hreceiver _]].
+        destruct Hreceiver as [iot [Hget_iot _]].
+        unfold get_this_var_mapping.
+        unfold gget in Hget_iot.
+        destruct (vars rΓ) as [|v0 vs] eqn:Hvars; [discriminate|].
+        injection Hget_iot as Hv0_eq.
+        subst v0.
+
+        unfold r_type in Hcorr.
+        rewrite H in Hcorr.
+        rewrite Hobjy in Hcorr.
+        simpl in Hcorr.
+        (* destruct (r_muttype h iot) as [q|] eqn:Hmut; [|contradiction *)
+        destruct Hcorr as [Hsubtype Hqualifier].
+        (* rewrite <- Hsubtype in H16. *)
+
+              assert (msignature mdef = msignature mdef0).
+        {
+          eapply method_signature_consistent_subtype; eauto.
+        }
+        rewrite <- H0 in H21.
+        rewrite <- H0 in H22.
+        rewrite <- H0 in H23.
+
+        simpl.
+        unfold runtime_getVal.
+        simpl.
+        destruct (nth_error vals i') as [v|] eqn:Hval_i.
+        - (* Parameter i' exists *)
+          destruct v as [|loc]; [trivial|].
+          (* Use H23 to get the subtyping relationship *)
+          assert (Hi'_bound : i' < List.length argtypes).
+          {
+            apply Forall2_length in H23.
+            simpl in Hi.
+            simpl in Hnth.
+            lia.
+          }
+          assert (Harg_type : exists argtype, nth_error argtypes i' = Some argtype).
+          {
+            apply nth_error_Some_exists.
+            exact Hi'_bound.
+          }
+          destruct Harg_type as [argtype Hargtype].
+          eapply runtime_lookup_list_preserves_typing with (CT:= CT) (h:=h)in H4; eauto.
+          eapply Forall2_nth_error in H4; eauto.
+          eapply Forall2_nth_error in H23; eauto.
+          simpl in H4.
+          eapply wf_r_typable_subtype; eauto.
+
+        - (* Parameter i' doesn't exist - contradiction *)
+          exfalso.
+          apply nth_error_None in Hval_i.
+          apply runtime_lookup_list_preserves_length in H4.
+          apply static_getType_list_preserves_length in H15.
+          apply Forall2_length in H23.
+          rewrite H4 in Hval_i.
+          rewrite <- H15 in Hval_i.
+          rewrite H23 in Hval_i.
+          simpl in Hi.
+          simpl in Hnth.
+          simpl in Hnth.
+          lia.
+    }
+    rename x0 into sΓmethodend.
+    assert (wf_r_config CT sΓmethodend rΓ'' h'). 
+    {
+      eapply IHHeval with (sΓ := sΓmethodinit) (sΓ' := sΓmethodend); eauto.
+    }
+    
+    { (* Method call resulting config is wellformed *)
+      have H8copy := H8.
+      unfold wf_r_config.
+      unfold wf_r_config in H8.
+      destruct H8 as [_ [Hheapinit [Hrenvinit [Hsenvinit [Hleninit Hcorrinit]]]]].
+      unfold wf_renv in Hrenv.
+      destruct Hrenv as [HrEnvLen [Hreceiver Hrenvval]].
+      destruct Hclass as [Hclass_ [Hobj_ [Hcname_consistent_ Hfind_consistent_]]].
+      repeat split.
+      exact Hclass_.
+      exact Hobj_.
+      apply Hcname_consistent_.
+      apply Hfind_consistent_.
+      apply Hfind_consistent_.
+      exact Hheapinit.
+      rewrite HeqrΓ'''.
+      simpl.
+      rewrite update_length.
+      simpl.
+      (* unfold wf_renv in Hrenv. *)
+      (* destruct Hrenv as [Hrenvdom Hreceiveroutter]. *)
+      lia.
+      destruct Hreceiver as [iot [Hget_iot Hiot_dom]].
+      exists iot.
+      split.
+      rewrite HeqrΓ'''.
+      simpl.
+      unfold gget in *.
+      destruct (vars rΓ) as [|v0 vs] eqn:Hvars.
+      discriminate Hget_iot.
+      injection Hget_iot as Hv0_eq.
+      subst v0.
+      unfold update.
+      destruct x as [|x'].
+      easy.
+      simpl.
+      reflexivity.
+      (* rewrite <- getmbody in Htyping_method. *)
+      have Hdom_le := eval_stmt_preserves_heap_domain_simple CT rΓmethodinit h (mbody_stmt (mbody mdef)) rΓ'' h' Heval.
+      lia.
+
+      (* Outter runtime env is wellformed*)
+      rewrite HeqrΓ'''.
+      simpl.
+      eapply Forall_update; eauto.
+      eapply Forall_impl; [|exact Hrenvval].
+      intros v Hv.
+      destruct v as [|loc]; [trivial|].
+      destruct (runtime_getObj h loc) as [obj|] eqn:Hobjloc; [|contradiction].
+      (* rewrite <- getmbody in Htyping_method. *)
+      have Hdom_le := eval_stmt_preserves_heap_domain_simple CT rΓmethodinit h (mbody_stmt (mbody mdef)) rΓ'' h' Heval.
+      assert (Hloc_dom : loc < dom h) by (apply runtime_getObj_dom in Hobjloc; exact Hobjloc).
+      assert (Hloc_dom' : loc < dom h') by lia.
+      destruct (runtime_getObj h' loc) as [obj'|] eqn:Hobj'.
+      trivial.
+      exfalso. apply runtime_getObj_not_dom in Hobj'. lia.
+      unfold runtime_getVal in H6.
+      destruct retval as [|loc]; [trivial|].
+      unfold wf_renv in Hrenvinit.
+      destruct Hrenvinit as [_ [_ Hrenv_wf]].
+      eapply Forall_nth_error in Hrenv_wf; eauto.
+      simpl in Hrenv_wf.
+      destruct (runtime_getObj h' loc) as [obj|] eqn:Hobjloc; [trivial|].
+      contradiction.
+      apply static_getType_dom in H13.
+      rewrite Hlen in H13.
+      exact H13.
+
+      rewrite Hlen.
+      exact HrEnvLen.
+      unfold wf_senv in Hsenv.
+      destruct Hsenv as [Hsenvpdom Hsenvptypeuse].
+      exact Hsenvptypeuse.
+
+      rewrite Hlen.
+      rewrite HeqrΓ'''.
+      simpl.
+      rewrite update_length.
+      easy.
+
+      intros i Hi sqt Hnth.
+      destruct (Nat.eq_dec i x) as [Heq | Hneq].
+      - (* Case: i = x (updated variable) *)
+        subst i.
+        rewrite HeqrΓ'''.
+        simpl.
+        unfold runtime_getVal.
+        rewrite update_same.
+        + apply static_getType_dom in H13.
+          rewrite Hlen in H13.
+          exact H13.
+        + (* Show wf_r_typable for retval *)
+          assert (Hnth_x : nth_error sΓ' x = Some Tx).
+          {
+            unfold static_getType in H13.
+            exact H13.
+          }
+          rewrite Hnth_x in Hnth.
+          injection Hnth as Hsqt_eq.
+          subst sqt.
+          (* Use the fact that retval is well-typed from method return *)
+          unfold runtime_getVal in H6.
+          destruct retval as [|loc]; [trivial|].
+          assert (Hret_dom : mreturn (mbody mdef) < dom (vars rΓ'')).
+          {
+            apply nth_error_Some.
+            rewrite H6.
+            discriminate.
+          }
+          rewrite <- Hleninit in Hret_dom.
+          assert (wf_class_table CT). {
+            unfold wf_r_config in H8copy.
+            destruct H8copy as [Hclass1 _].
+            exact Hclass1.
+          }
+          destruct Hmethodret as [Hmbodyretvar_dom [Hnth_mbodyret Hsubtype_ret]].
+          (* unfold methodbody0 in Hnth_mbodyret. *)
+          (* rewrite <- getmbody in Hnth_mbodyret. *)
+          have Hcorr_copy := Hcorr.
+          specialize (Hcorrinit (mreturn (mbody mdef)) Hret_dom mrettype Hnth_mbodyret).
+          destruct (runtime_getVal rΓ'' (mreturn (mbody mdef))) eqn: Hmet_val; [|easy].
+          destruct v.
+          2:{
+            unfold runtime_getVal in Hmet_val.
+            rewrite Hmet_val in H6.
+            inversion H6.
+            unfold wf_r_typable.
+            unfold r_type.
+            unfold runtime_getObj.
+            subst loc.
+            unfold wf_r_typable in Hcorrinit.
+            unfold r_type in Hcorrinit.
+            unfold runtime_getObj in Hcorrinit.
+            destruct (nth_error h' l) eqn: Hobjh'.
+            2:{
+              easy.
+            }
+            destruct Hcorrinit as [Hrorettypebase Hrorettypequalifier].
+            split.
+            destruct Hsubtype_ret as [Hsubtype_ret Hmethodoveride].
+            apply qualified_type_subtype_base_subtype in Hsubtype_ret.
+            apply qualified_type_subtype_base_subtype in H21.
+            unfold r_type in Hcorr_copy.
+            assert (Hy_dom : y < dom sΓ').
+            {
+              apply static_getType_dom in H14.
+              exact H14.
+            }
+
+            assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
+              eapply correspondence_to_typable; eauto.
+            }
+            unfold wf_r_typable in Hytypable.
+            unfold r_type in Hytypable.
+            unfold r_basetype in H0.
+            destruct (runtime_getObj h ly) eqn: Hobjly.
+            2:{easy.
+            }
+            destruct Hytypable as [HyBasetype _].
+            inversion H0.
+            assert (msignature mdef = msignature mdef0).
+            {
+              subst cy.
+              eapply method_signature_consistent_subtype; eauto.
+            }
+            rewrite <- H9 in H21.
+            eapply base_trans; eauto.
+            eapply base_trans; eauto.
+
+            eapply qualified_type_subtype_q_subtype in H21.
+            eapply qualifier_typable_trans_subtype; [exact Hrorettypequalifier| | exact H21].
+            destruct Hsubtype_ret as [Hsubtype_ret _].
+            apply qualified_type_subtype_q_subtype in Hsubtype_ret.
+            assert (Hy_dom : y < dom sΓ').
+            {
+              apply static_getType_dom in H14.
+              exact H14.
+            }
+
+            assert (Hytypable: wf_r_typable CT rΓ h ly Ty). {
+              eapply correspondence_to_typable; eauto.
+            }
+            unfold wf_r_typable in Hytypable.
+            unfold r_type in Hytypable.
+            unfold r_basetype in H0.
+            destruct (runtime_getObj h ly).
+            2:{easy.
+            }
+            destruct Hytypable as [HyBasetype _].
+            inversion H0.
+            assert (msignature mdef = msignature mdef0).
+            {
+              subst cy. 
+              eapply method_signature_consistent_subtype; eauto.
+            }
+            rewrite <- H9.
+            exact Hsubtype_ret.
+          }
+          unfold runtime_getVal in Hmet_val.
+          rewrite H6 in Hmet_val.
+          easy.
+      - (* Case: i ≠ x (unchanged variable) *)
+        rewrite HeqrΓ'''.
+        simpl.
+        unfold runtime_getVal.
+        rewrite update_diff; [symmetry; exact Hneq|].
+        specialize (Hcorr i Hi sqt Hnth).
+        unfold runtime_getVal in Hcorr.
+        destruct (nth_error (vars rΓ) i) as [v|] eqn:Hgetval; [|exact Hcorr].
+        destruct v as [|loc]; [trivial|].
+        (* Need to show wf_r_typable is preserved when changing runtime environment and heap *)
+        unfold wf_r_typable in Hcorr |- *.
+        destruct (r_type h loc) as [rqt|] eqn:Hrtype; [|contradiction].
+        assert (Hrtype_preserved : r_type h' loc = Some rqt).
+        {
+          eapply eval_stmt_preserves_r_type; eauto.
+          unfold r_type in Hrtype.
+          destruct (runtime_getObj h loc) as [obj|] eqn:Hobjloc; [|discriminate].
+          apply runtime_getObj_dom in Hobjloc.
+          exact Hobjloc.
+        }
+        {
+          unfold update.
+          destruct x as [|x'].
+          contradiction Hneq.
+          easy.
+          simpl.
+          rewrite Hrtype_preserved.
+          exact Hcorr.
+        }
+    }
   }
   - (* Case: stmt = Skip *)
     intros.
@@ -2775,7 +3303,7 @@ Proof.
     specialize (IHHeval1 eq_refl sΓ'0 sΓ Hwf H4) as IH1.
     specialize (IHHeval2 eq_refl sΓ' sΓ'0 IH1 H6) as IH2.
     exact IH2.
-Admitted.
+Qed.
 
 (* ------------------------------------------------------------- *)
 (* Immutability properties for PICO *)
@@ -3096,14 +3624,14 @@ Proof.
     rewrite <- H21.
     rewrite Heqmsig.
     rewrite H29.
-    admit.
-    admit.
-    (* rewrite <- Hsubtype in H22.
     simpl in mdeflookupcopy.
-    assert (mdef = mdef0). 
+    assert (msignature mdef = msignature mdef0).
     {
-      eapply find_overriding_method_deterministic; eauto.
+      eapply method_signature_consistent_subtype; eauto.
     }
+    rewrite <- H1 in H27.
+    rewrite <- H1 in H28.
+    rewrite <- H1 in H29.
     rewrite H1.
     reflexivity.
 
@@ -3163,21 +3691,20 @@ Proof.
         injection Hobj_ly as Hobjy_eq.
 
 
-      rewrite <- Hsubtype in H22.
       simpl in mdeflookupcopy.
       simpl in H1.
       inversion H1.
       rewrite <- H3 in mdeflookupcopy.
-      assert (heqm : mdef = mdef0). 
+      assert (Hsigeq: msignature mdef = msignature mdef0).
       {
-        symmetry.
-        eapply find_overriding_method_deterministic; eauto.
+        eapply method_signature_consistent_subtype; eauto.
       }
+      rewrite <- Hsigeq in H27.
+      rewrite <- Hsigeq in H28.
+      rewrite <- Hsigeq in H29.
       subst objy.
-      simpl.
-      rewrite heqm.
-      rewrite <- Hsubtype in H28.
-      exact H28.
+      eapply base_trans; eauto.
+
       apply qualified_type_subtype_q_subtype in H28.
       assert (Hy_dom : y < dom sΓ').
         {
@@ -3192,7 +3719,6 @@ Proof.
         destruct (runtime_getObj h ly) as [obj|] eqn:Hobjy; [|discriminate].
         destruct obj as [rt_obj fields_obj].
         destruct rt_obj as [rq_obj rc_obj].
-
 
         unfold wf_renv in Hrenv.
         destruct Hrenv as [_ [Hreceiver _]].
@@ -3210,16 +3736,17 @@ Proof.
         destruct Hcorr as [Hsubtype Hqualifier].
         simpl in Hobj_ly.
         injection Hobj_ly as Hobjy_eq.
-      rewrite <- Hsubtype in H22.
       simpl in mdeflookupcopy.
       simpl in H1.
       inversion H1.
       rewrite <- H3 in mdeflookupcopy.
-      assert (heqm : mdef = mdef0). 
+            assert (Hsigeq: msignature mdef = msignature mdef0).
       {
-        eapply find_overriding_method_deterministic; eauto.
+        eapply method_signature_consistent_subtype; eauto.
       }
-      subst mdef0.
+      rewrite <- Hsigeq in H27.
+      rewrite <- Hsigeq in H28.
+      rewrite <- Hsigeq in H29.
       rewrite <- Hobjy_eq.
       simpl.
       eapply qualifier_typable_subtype_receiver; eauto.
@@ -3257,17 +3784,18 @@ Proof.
         rewrite Hobjy in Hcorr.
         simpl in Hcorr.
         destruct Hcorr as [Hsubtype Hqualifier].
-        rewrite <- Hsubtype in H22.
         simpl in mdeflookupcopy.
         simpl in H1.
       inversion H1.
       rewrite <- H3 in mdeflookupcopy.
 
-      assert (heqm : mdef = mdef0). 
+      assert (Hsigeq: msignature mdef = msignature mdef0).
       {
-        eapply find_overriding_method_deterministic; eauto.
+        eapply method_signature_consistent_subtype; eauto.
       }
-      subst mdef0.
+      rewrite <- Hsigeq in H27.
+      rewrite <- Hsigeq in H28.
+      rewrite <- Hsigeq in H29.
 
       simpl.
       unfold runtime_getVal.
@@ -3307,8 +3835,7 @@ Proof.
     simpl in Hnth.
     simpl in Hnth.
     lia.
-    }*)
-  }
+    }
     exact Hwf_method_frame.
     rewrite getmbody.
     exact Htyping_method.
@@ -3345,7 +3872,7 @@ Proof.
   specialize (preservation_pico CT sΓ rΓ h s1 rΓ' h' sΓ'0 H1 H10 H3_) as Hwf'.
   specialize (IHeval_stmt2 H3 Heqok H5 vals' H4 values' Hrtype sΓ' sΓ'0 Hwf' H12). 
   rewrite IHeval_stmt2 in IHeval_stmt1; auto.
-Admitted.
+Qed.
 
 Theorem readonly_pico_field_write:
     forall CT sΓ rΓ h stmt rΓ' h' sΓ' l C vals vals' f qt readonlyx anyf rhs anyrq,
